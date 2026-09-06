@@ -19,7 +19,7 @@ EFILIBDIR := /usr/lib
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
-.PHONY: all clean run image iso kernel smoke iso-smoke network-smoke
+.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke
 all: image
 kernel: $(BUILD)/kernel.elf
 
@@ -94,6 +94,9 @@ iso-smoke: iso
 	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial-iso.log
 	grep -q "Orion desktop ready" $(BUILD)/serial-iso.log
 	@echo "UEFI install ISO smoke test passed"
+
+install-smoke: iso
+	python3 scripts/install_smoke.py
 
 network-smoke: image
 	python3 scripts/network_smoke.py
