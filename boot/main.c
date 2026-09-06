@@ -3,6 +3,8 @@
 #include <elf.h>
 #include "bootinfo.h"
 
+#define ORION_INSTALL_CHUNK (64u * 1024u)
+
 static BOOLEAN valid_kernel_elf(const Elf64_Ehdr *eh, UINTN file_size) {
     if (!eh || file_size < sizeof(*eh)) return FALSE;
     if (eh->e_ident[EI_MAG0] != ELFMAG0 ||
@@ -22,6 +24,183 @@ static BOOLEAN valid_kernel_elf(const Elf64_Ehdr *eh, UINTN file_size) {
     return TRUE;
 }
 
+static EFI_STATUS get_loaded_image(EFI_HANDLE image, EFI_SYSTEM_TABLE *st,
+                                   EFI_LOADED_IMAGE **loaded_out) {
+    if (!loaded_out) return EFI_INVALID_PARAMETER;
+    *loaded_out = NULL;
+    return uefi_call_wrapper(st->BootServices->HandleProtocol, 3,
+                             image, &LoadedImageProtocol,
+                             (void **)loaded_out);
+}
+
+static CHAR16 read_key_with_timeout(EFI_SYSTEM_TABLE *st, UINTN seconds) {
+    EFI_EVENT timer = NULL;
+    EFI_STATUS status = uefi_call_wrapper(st->BootServices->CreateEvent, 5,
+                                          EVT_TIMER, 0, NULL, NULL, &timer);
+    if (EFI_ERROR(status)) return 0;
+
+    status = uefi_call_wrapper(st->BootServices->SetTimer, 3,
+                               timer, TimerRelative,
+                               (UINT64)seconds * 10000000ULL);
+    if (EFI_ERROR(status)) {
+        uefi_call_wrapper(st->BootServices->CloseEvent, 1, timer);
+        return 0;
+    }
+
+    EFI_EVENT events[2] = { st->ConIn->WaitForKey, timer };
+    UINTN index = 1;
+    status = uefi_call_wrapper(st->BootServices->WaitForEvent, 3,
+                               2, events, &index);
+    CHAR16 result = 0;
+    if (!EFI_ERROR(status) && index == 0) {
+        EFI_INPUT_KEY key;
+        status = uefi_call_wrapper(st->ConIn->ReadKeyStroke, 2,
+                                   st->ConIn, &key);
+        if (!EFI_ERROR(status)) result = key.UnicodeChar;
+    }
+    uefi_call_wrapper(st->BootServices->CloseEvent, 1, timer);
+    return result;
+}
+
+static EFI_STATUS find_single_install_target(EFI_HANDLE source_handle,
+                                             EFI_SYSTEM_TABLE *st,
+                                             UINT64 source_bytes,
+                                             EFI_BLOCK_IO_PROTOCOL **target_out) {
+    EFI_HANDLE *handles = NULL;
+    UINTN count = 0;
+    EFI_STATUS status = uefi_call_wrapper(st->BootServices->LocateHandleBuffer, 5,
+                                          ByProtocol, &BlockIoProtocol,
+                                          NULL, &count, &handles);
+    if (EFI_ERROR(status)) return status;
+
+    EFI_BLOCK_IO_PROTOCOL *chosen = NULL;
+    UINTN candidates = 0;
+    for (UINTN i = 0; i < count; ++i) {
+        if (handles[i] == source_handle) continue;
+        EFI_BLOCK_IO_PROTOCOL *bio = NULL;
+        status = uefi_call_wrapper(st->BootServices->HandleProtocol, 3,
+                                   handles[i], &BlockIoProtocol,
+                                   (void **)&bio);
+        if (EFI_ERROR(status) || !bio || !bio->Media) continue;
+        if (!bio->Media->MediaPresent || bio->Media->ReadOnly ||
+            bio->Media->LogicalPartition || bio->Media->BlockSize == 0) {
+            continue;
+        }
+        UINT64 blocks = (UINT64)bio->Media->LastBlock + 1ULL;
+        UINT64 capacity = blocks * (UINT64)bio->Media->BlockSize;
+        if (capacity < source_bytes) continue;
+        if ((source_bytes % bio->Media->BlockSize) != 0) continue;
+        chosen = bio;
+        candidates++;
+    }
+
+    uefi_call_wrapper(st->BootServices->FreePool, 1, handles);
+    if (candidates != 1 || !chosen) return EFI_NOT_FOUND;
+    *target_out = chosen;
+    return EFI_SUCCESS;
+}
+
+static EFI_STATUS copy_install_media(EFI_SYSTEM_TABLE *st,
+                                     EFI_BLOCK_IO_PROTOCOL *source,
+                                     EFI_BLOCK_IO_PROTOCOL *target) {
+    if (!source || !target || !source->Media || !target->Media)
+        return EFI_INVALID_PARAMETER;
+
+    UINTN source_block = source->Media->BlockSize;
+    UINTN target_block = target->Media->BlockSize;
+    if (!source_block || !target_block) return EFI_UNSUPPORTED;
+
+    UINT64 source_bytes = ((UINT64)source->Media->LastBlock + 1ULL) *
+                          (UINT64)source_block;
+    if ((source_bytes % target_block) != 0) return EFI_UNSUPPORTED;
+
+    UINTN chunk = ORION_INSTALL_CHUNK;
+    while ((chunk % source_block) != 0 || (chunk % target_block) != 0) {
+        chunk += source_block;
+        if (chunk > 1024u * 1024u) return EFI_UNSUPPORTED;
+    }
+
+    void *buffer = NULL;
+    EFI_STATUS status = uefi_call_wrapper(st->BootServices->AllocatePool, 3,
+                                          EfiLoaderData, chunk, &buffer);
+    if (EFI_ERROR(status)) return status;
+
+    EFI_LBA source_lba = 0;
+    EFI_LBA target_lba = 0;
+    UINT64 remaining = source_bytes;
+    while (remaining) {
+        UINTN bytes = remaining > chunk ? chunk : (UINTN)remaining;
+        status = uefi_call_wrapper(source->ReadBlocks, 5,
+                                   source, source->Media->MediaId,
+                                   source_lba, bytes, buffer);
+        if (EFI_ERROR(status)) break;
+        status = uefi_call_wrapper(target->WriteBlocks, 5,
+                                   target, target->Media->MediaId,
+                                   target_lba, bytes, buffer);
+        if (EFI_ERROR(status)) break;
+        source_lba += bytes / source_block;
+        target_lba += bytes / target_block;
+        remaining -= bytes;
+    }
+
+    if (!EFI_ERROR(status)) {
+        status = uefi_call_wrapper(target->FlushBlocks, 1, target);
+    }
+    uefi_call_wrapper(st->BootServices->FreePool, 1, buffer);
+    return status;
+}
+
+static void offer_optical_install(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
+    EFI_LOADED_IMAGE *loaded = NULL;
+    EFI_STATUS status = get_loaded_image(image, st, &loaded);
+    if (EFI_ERROR(status) || !loaded) return;
+
+    EFI_BLOCK_IO_PROTOCOL *source = NULL;
+    status = uefi_call_wrapper(st->BootServices->HandleProtocol, 3,
+                               loaded->DeviceHandle, &BlockIoProtocol,
+                               (void **)&source);
+    if (EFI_ERROR(status) || !source || !source->Media ||
+        !source->Media->ReadOnly || !source->Media->MediaPresent) {
+        return;
+    }
+
+    Print(L"UN_Orion install media detected.\r\n");
+    Print(L"Press I within 5 seconds to install, or continue Live boot.\r\n");
+    CHAR16 key = read_key_with_timeout(st, 5);
+    if (key != L'i' && key != L'I') {
+        Print(L"Continuing Live boot.\r\n");
+        return;
+    }
+
+    UINT64 source_bytes = ((UINT64)source->Media->LastBlock + 1ULL) *
+                          (UINT64)source->Media->BlockSize;
+    EFI_BLOCK_IO_PROTOCOL *target = NULL;
+    status = find_single_install_target(loaded->DeviceHandle, st,
+                                        source_bytes, &target);
+    if (EFI_ERROR(status) || !target) {
+        Print(L"Installer requires exactly one writable whole-disk target.\r\n");
+        Print(L"Install cancelled; continuing Live boot.\r\n");
+        return;
+    }
+
+    Print(L"A writable target disk was found. ALL DATA ON IT WILL BE ERASED.\r\n");
+    Print(L"Press Y within 10 seconds to confirm.\r\n");
+    key = read_key_with_timeout(st, 10);
+    if (key != L'y' && key != L'Y') {
+        Print(L"Install cancelled; continuing Live boot.\r\n");
+        return;
+    }
+
+    Print(L"Installing UN_Orion to target disk...\r\n");
+    status = copy_install_media(st, source, target);
+    if (EFI_ERROR(status)) {
+        Print(L"UN_Orion install failed: %r\r\n", status);
+        Print(L"Continuing Live boot.\r\n");
+        return;
+    }
+    Print(L"UN_Orion install complete. Remove the optical media before reboot.\r\n");
+}
+
 static EFI_STATUS load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *st,
                               EFI_PHYSICAL_ADDRESS *entry_out) {
     EFI_LOADED_IMAGE *loaded = NULL;
@@ -31,8 +210,7 @@ static EFI_STATUS load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *st,
     UINTN info_size = 0;
     EFI_STATUS status;
 
-    status = uefi_call_wrapper(st->BootServices->HandleProtocol, 3,
-                               image, &LoadedImageProtocol, (void **)&loaded);
+    status = get_loaded_image(image, st, &loaded);
     if (EFI_ERROR(status)) return status;
 
     status = uefi_call_wrapper(st->BootServices->HandleProtocol, 3,
@@ -146,13 +324,14 @@ static EFI_STATUS exit_boot_services(EFI_HANDLE image, EFI_SYSTEM_TABLE *st,
                                    image, map_key);
         if (status == EFI_SUCCESS) return EFI_SUCCESS;
         if (status != EFI_INVALID_PARAMETER) return status;
-        /* The map changed between GetMemoryMap and ExitBootServices. Retry. */
     }
 }
 
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
     InitializeLib(image, st);
     Print(L"UN_Orion bootloader\r\n");
+
+    offer_optical_install(image, st);
 
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
     EFI_STATUS status = uefi_call_wrapper(st->BootServices->LocateProtocol, 3,
