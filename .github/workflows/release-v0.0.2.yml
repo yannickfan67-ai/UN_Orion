@@ -1,0 +1,63 @@
+name: publish-v0.0.2
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-v0.0.2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout v0.0.2 source
+        uses: actions/checkout@v4
+        with:
+          ref: 13b080ed751cd2c8af77de2fea698a35ad8a9fd4
+          fetch-depth: 0
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
+      - name: Build and smoke test
+        run: |
+          make all
+          make smoke
+      - name: Prepare release assets
+        run: |
+          cp build/orion.img UN_Orion-v0.0.2.img
+          git archive --format=zip --output=UN_Orion-v0.0.2-source.zip 13b080ed751cd2c8af77de2fea698a35ad8a9fd4
+          sha256sum UN_Orion-v0.0.2.img UN_Orion-v0.0.2-source.zip > SHA256SUMS.txt
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.0.2 >/dev/null 2>&1; then
+            echo 'v0.0.2 already exists; leaving it unchanged.'
+            exit 0
+          fi
+          gh release create v0.0.2 \
+            UN_Orion-v0.0.2.img \
+            UN_Orion-v0.0.2-source.zip \
+            SHA256SUMS.txt \
+            --target 13b080ed751cd2c8af77de2fea698a35ad8a9fd4 \
+            --title 'UN_Orion v0.0.2' \
+            --notes-file - <<'EOF'
+          First interactive UN_Orion developer release.
+
+          Highlights:
+          - x86_64 UEFI boot chain and ELF kernel handoff
+          - GOP framebuffer interface using Traf Typeface v2.1 / 2.100
+          - own GDT and IDT
+          - 8259 PIC remap and PS/2 IRQ1 keyboard input
+          - interactive Orion Console
+          - commands: help, clear, info, mem, reboot, halt
+          - COM1 serial diagnostics
+          - UEFI memory-map handoff and usable-memory reporting
+          - self-contained Python FAT16 image builder
+          - QEMU/OVMF smoke-tested before release publication
+
+          This is an early developer preview. It is intended for QEMU/OVMF first; bare-metal hardware support is still experimental.
+          EOF
