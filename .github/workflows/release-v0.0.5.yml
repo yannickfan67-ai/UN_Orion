@@ -12,10 +12,10 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout v0.0.5 source
+      - name: Checkout verified v0.0.5 source
         uses: actions/checkout@v4
         with:
-          ref: b4bb0875cb729e374e8227324c20339dcd62bc69
+          ref: 026a4cda2a305c34dc5546c24ea2da0d45096ac8
           fetch-depth: 0
 
       - name: Install toolchain
@@ -23,7 +23,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
 
-      - name: Build and verify disk, ISO and network
+      - name: Clean build and verify disk, ISO and network
         run: |
           make clean
           make all
@@ -34,17 +34,20 @@ jobs:
 
       - name: Prepare release assets
         run: |
-          cp build/orion.img UN_Orion-v0.0.5.img
+          cp build/orion.img UN_Orion-v0.0.5-network-browser.img
           cp build/UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-install.iso
-          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip b4bb0875cb729e374e8227324c20339dcd62bc69
-          sha256sum UN_Orion-v0.0.5.img UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-source.zip > SHA256SUMS.txt
+          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip 026a4cda2a305c34dc5546c24ea2da0d45096ac8
+          sha256sum \
+            UN_Orion-v0.0.5-network-browser.img \
+            UN_Orion-v0.0.5-install.iso \
+            UN_Orion-v0.0.5-source.zip > SHA256SUMS.txt
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@v4
         with:
           name: UN_Orion-v0.0.5-verified-release-bundle
           path: |
-            UN_Orion-v0.0.5.img
+            UN_Orion-v0.0.5-network-browser.img
             UN_Orion-v0.0.5-install.iso
             UN_Orion-v0.0.5-source.zip
             SHA256SUMS.txt
@@ -58,11 +61,11 @@ jobs:
             exit 0
           fi
           gh release create v0.0.5 \
-            UN_Orion-v0.0.5.img \
+            UN_Orion-v0.0.5-network-browser.img \
             UN_Orion-v0.0.5-install.iso \
             UN_Orion-v0.0.5-source.zip \
             SHA256SUMS.txt \
-            --target b4bb0875cb729e374e8227324c20339dcd62bc69 \
+            --target 026a4cda2a305c34dc5546c24ea2da0d45096ac8 \
             --title 'UN_Orion v0.0.5 Network & Vela Preview' \
             --notes-file - <<'EOF'
           UN_Orion v0.0.5 turns the desktop preview into a network-capable system and introduces its own browser stack.
@@ -72,17 +75,23 @@ jobs:
           - RTL8139 PCI network driver
           - Ethernet II, ARP, IPv4, ICMP, UDP, DNS and a minimal TCP client
           - HTTP/1.0 GET support
-          - UN_Vela 0.1 native browser
-          - Aster Engine 0.1 HTML tokenizer/DOM/layout/paint pipeline
+          - UN_Vela 0.1 native browser shell
+          - Aster Engine 0.1 HTML tokenizer, DOM, layout and paint pipeline
           - Network desktop application
-          - OpenWrt lab profile and dual-VM test topology helper
-          - real UEFI El Torito install/live ISO
-          - pure-Python ISO builder, with no xorriso dependency
-          - CI verifies raw-disk boot, DVD/ISO boot and a real HTTP transaction before publishing
+          - Orion Browser retained as the lightweight/recovery browser line
+          - OpenWrt lab profile and virtual-LAN helper
+          - pure-Python ISO9660 / El Torito UEFI install-live media builder
+          - bootable UEFI DVD ISO in addition to the raw disk image
 
-          Known limitations:
-          - static IPv4 configuration; DHCP is not implemented yet
-          - HTTP only; TLS/HTTPS is not implemented yet
-          - Aster is an early engine without CSS, JavaScript, images or full HTML5 parsing
-          - Files/Notes are not yet persistent and ORX disk loading is still in progress
+          Release verification on a clean GitHub Actions runner includes:
+          - raw-image QEMU/OVMF boot smoke test
+          - El Torito UEFI DVD boot smoke test
+          - real RTL8139 -> ARP -> IPv4 -> TCP -> HTTP network smoke test
+
+          Current limitations:
+          - the ISO is an install/live-media foundation; the target-disk installer is still under development
+          - IPv4 configuration is static
+          - TLS/HTTPS is not implemented yet
+          - Aster does not yet implement CSS, JavaScript, images or a full HTML5 tree builder
+          - Files/Notes persistence and on-disk ORX loading are still in progress
           EOF
