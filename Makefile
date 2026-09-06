@@ -7,6 +7,8 @@ LD := ld.lld
 
 KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
+KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c
+KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
 EFIINC := /usr/include/efi
 EFICRT := /usr/lib/crt0-efi-x86_64.o
@@ -27,13 +29,13 @@ $(BUILD)/generated/.fontstamp: tools/fontgen.py | $(BUILD)
 	python3 tools/fontgen.py $(BUILD)/generated
 	touch $@
 
-$(BUILD)/kernel.o: kernel/main.c include/bootinfo.h $(BUILD)/generated/.fontstamp | $(BUILD)
+$(BUILD)/%.o: kernel/%.c include/bootinfo.h $(BUILD)/generated/.fontstamp | $(BUILD)
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(BUILD)/arch.o: kernel/arch.S | $(BUILD)
 	$(CC) -target x86_64-unknown-none -ffreestanding -c $< -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kernel.o $(BUILD)/arch.o
+$(BUILD)/kernel.elf: $(KERNEL_OBJS)
 	$(LD) $(KERNEL_LDFLAGS) $^ -o $@
 
 $(BUILD)/boot.o: boot/main.c include/bootinfo.h | $(BUILD)
@@ -56,8 +58,7 @@ run: image $(BUILD)/OVMF_VARS.fd
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
 		-drive format=raw,file=$(BUILD)/orion.img \
-		-nic none \
-		-serial stdio
+		-nic none -serial stdio
 
 smoke: image $(BUILD)/OVMF_VARS.fd
 	rm -f $(BUILD)/serial.log
@@ -65,10 +66,11 @@ smoke: image $(BUILD)/OVMF_VARS.fd
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
 		-drive format=raw,file=$(BUILD)/orion.img \
-		-nic none \
-		-display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
+		-nic none -display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
-	grep -q "UN_Orion kernel 0.0.2 alive" $(BUILD)/serial.log
+	grep -q "UN_Orion kernel 0.0.3 alive" $(BUILD)/serial.log
+	grep -q "PMM ready" $(BUILD)/serial.log
+	grep -q "IDT/PIC/PIT/keyboard ready" $(BUILD)/serial.log
 	@echo "QEMU smoke test passed"
 
 clean:
