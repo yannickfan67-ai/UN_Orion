@@ -27,25 +27,19 @@ Aster 0.1 currently contains:
 - HTML tokenizer/parser
 - fixed-capacity DOM tree
 - common element recognition (`html`, `head`, `body`, `title`, `h1`, `h2`, `p`, `div`, `br`, `a`, lists, emphasis and code)
-- entity decoding
-- link metadata
-- block/inline layout
-- line wrapping
-- paint list generation
+- entity decoding and link metadata
+- block/inline layout and line wrapping
+- paint-list generation
 - native framebuffer painting through UN_Orion graphics APIs
 
 The engine lives in `kernel/aster.c` with its public ABI in `include/aster.h`. UN_Vela is separated into `kernel/vela.c` / `include/vela.h`.
 
 ## Networking
 The first network stack is intentionally small but real:
-- PCI enumeration
-- RTL8139 driver (PIO + DMA rings, polling RX)
-- Ethernet II
-- ARP
-- IPv4
+- PCI enumeration and RTL8139 driver
+- Ethernet II / ARP / IPv4
 - ICMP echo
-- UDP
-- DNS A lookup
+- UDP and DNS A lookup
 - minimal TCP client
 - HTTP/1.0 GET
 
@@ -56,6 +50,20 @@ Default QEMU user-network profile:
 
 Terminal commands include `net`, `ping`, `vela`, `browser`, `nettest`, and `openwrt`.
 `openwrt` switches the early static profile to `192.168.1.2/24`, gateway/DNS `192.168.1.1`.
+
+## UEFI install / live media
+UN_Orion now has a real El Torito UEFI ISO built directly from the bootable FAT system image.
+
+```bash
+make iso
+```
+
+Output:
+```text
+build/UN_Orion-v0.0.5-install.iso
+```
+
+`make iso-smoke` boots that ISO as a virtual DVD through OVMF and requires the bootloader, kernel and desktop to reach a healthy state. The ISO builder is pure Python and does not require xorriso/genisoimage.
 
 ## OpenWrt lab
 `scripts/run-openwrt-lab.sh` wires two QEMU machines without TAP/root networking:
@@ -73,7 +81,15 @@ openwrt
 ping
 vela
 ```
-and browse `192.168.1.1/` if the OpenWrt image exposes an HTTP UI.
+
+## Related UN repositories
+- `UN_Vela` — browser shell
+- `Aster-Engine` — rendering engine
+- `Orion-Browser` — lightweight/recovery browser branch
+- `Orion-Executable-Tools` — ORX application SDK/toolchain
+- `Orion-Driver-Interface` — technical driver ABI/package specification
+- `Orion-Driver-Kit` — ODK tooling and reference drivers
+- `UN_Cygnus` — from-scratch VM/hypervisor project
 
 ## Build
 ```bash
@@ -87,7 +103,6 @@ make run
 - TCP is a small synchronous client, not yet a general socket API.
 - HTTP only; TLS/HTTPS is not implemented yet.
 - Aster does not yet implement CSS, JavaScript, images, forms or a full HTML5 tree builder.
-- The current HTTP path still contains some legacy text-normalization behavior; moving all markup handling exclusively into Aster is the next browser-engine cleanup.
 - Files/Notes persistence and ORX loading from disk are still in progress.
 
-Stable desktop release: `v0.0.4`. Current `main` contains the network stack plus the first UN_Vela/Aster integration.
+Stable desktop release: `v0.0.4`. The `v0.0.5` line adds networking, UN_Vela/Aster and UEFI install media.
