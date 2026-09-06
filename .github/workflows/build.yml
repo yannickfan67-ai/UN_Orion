@@ -17,10 +17,14 @@ jobs:
         run: |
           make all
           make iso
+          python3 -m json.tool build/orion-image.json >/dev/null
+          python3 -m json.tool build/orion-install.json >/dev/null
       - name: QEMU boot smoke test
         run: make smoke
       - name: QEMU UEFI install ISO smoke test
         run: make iso-smoke
+      - name: QEMU end-to-end disk installation test
+        run: make install-smoke
       - name: QEMU network HTTP smoke test
         run: make network-smoke
       - name: Prepare local-test firmware
@@ -36,6 +40,8 @@ jobs:
           name: UN_Orion-v0.0.5-network-browser-install-media
           path: |
             build/orion.img
+            build/orion-image.json
             build/UN_Orion-v0.0.5-install.iso
+            build/orion-install.json
             build/OVMF_CODE.localtest.fd
             build/OVMF_VARS.localtest.fd
