@@ -12,8 +12,8 @@ EFIINC := /usr/include/efi
 EFICRT := /usr/lib/crt0-efi-x86_64.o
 EFILDS := /usr/lib/elf_x86_64_efi.lds
 EFILIBDIR := /usr/lib
-OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE.fd
-OVMF_VARS ?= /usr/share/OVMF/OVMF_VARS.fd
+OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE_4M.fd))
+OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
 .PHONY: all clean run image kernel smoke
 all: image
