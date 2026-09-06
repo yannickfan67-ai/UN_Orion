@@ -14,8 +14,6 @@ EFIINC := /usr/include/efi
 EFICRT := /usr/lib/crt0-efi-x86_64.o
 EFILDS := /usr/lib/elf_x86_64_efi.lds
 EFILIBDIR := /usr/lib
-# Prefer OVMF 4M: its fuller DXE set includes the optical-media path used by
-# the El Torito UEFI install/live ISO. Fall back only when 4M is unavailable.
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
@@ -49,11 +47,13 @@ $(BUILD)/BOOTX64.so: $(BUILD)/boot.o
 $(BUILD)/BOOTX64.EFI: $(BUILD)/BOOTX64.so
 	objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel -j .rela -j .reloc --target=efi-app-x86_64 $< $@
 
-image: $(BUILD)/kernel.elf $(BUILD)/BOOTX64.EFI tools/mkfat.py
+image: $(BUILD)/kernel.elf $(BUILD)/BOOTX64.EFI tools/mkfat.py tools/image_manifest.py
 	python3 tools/mkfat.py $(BUILD)/orion.img $(BUILD)/BOOTX64.EFI $(BUILD)/kernel.elf
+	python3 tools/image_manifest.py --input $(BUILD)/orion.img --output $(BUILD)/orion-image.json --media disk-image --arch x86_64
 
-iso: image tools/mkiso.py
+iso: image tools/mkiso.py tools/image_manifest.py
 	python3 tools/mkiso.py $(BUILD)/orion.img $(BUILD)/UN_Orion-v0.0.5-install.iso
+	python3 tools/image_manifest.py --input $(BUILD)/UN_Orion-v0.0.5-install.iso --output $(BUILD)/orion-install.json --media installer-iso --arch x86_64
 
 $(BUILD)/OVMF_VARS.fd: | $(BUILD)
 	cp $(OVMF_VARS) $@
