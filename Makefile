@@ -63,11 +63,12 @@ run: image $(BUILD)/OVMF_VARS.fd
 		-drive format=raw,file=$(BUILD)/orion.img \
 		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -serial stdio
 
-smoke: image $(BUILD)/OVMF_VARS.fd
+smoke: image
+	cp $(OVMF_VARS) $(BUILD)/OVMF_VARS-smoke.fd
 	rm -f $(BUILD)/serial.log
 	@set +e; timeout 10s qemu-system-x86_64 -machine q35 -m 256M \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
-		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
+		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS-smoke.fd \
 		-drive format=raw,file=$(BUILD)/orion.img \
 		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
@@ -78,11 +79,12 @@ smoke: image $(BUILD)/OVMF_VARS.fd
 	grep -q "Network stack ready" $(BUILD)/serial.log
 	@echo "QEMU smoke test passed"
 
-iso-smoke: iso $(BUILD)/OVMF_VARS.fd
+iso-smoke: iso
+	cp $(OVMF_VARS) $(BUILD)/OVMF_VARS-iso.fd
 	rm -f $(BUILD)/serial-iso.log
 	@set +e; timeout 12s qemu-system-x86_64 -machine q35 -m 256M \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
-		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
+		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS-iso.fd \
 		-cdrom $(BUILD)/UN_Orion-v0.0.5-install.iso -boot d \
 		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -display none -monitor none -serial file:$(BUILD)/serial-iso.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
