@@ -1,0 +1,78 @@
+name: publish-v0.0.5
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-v0.0.5.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout v0.0.5 source
+        uses: actions/checkout@v4
+        with:
+          ref: 23e0d72ddd624308ff7fc25b36324001b35bbed8
+          fetch-depth: 0
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
+
+      - name: Build and verify disk, ISO and network
+        run: |
+          make clean
+          make all
+          make iso
+          make smoke
+          make iso-smoke
+          make network-smoke
+
+      - name: Prepare release assets
+        run: |
+          cp build/orion.img UN_Orion-v0.0.5.img
+          cp build/UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-install.iso
+          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip 23e0d72ddd624308ff7fc25b36324001b35bbed8
+          sha256sum UN_Orion-v0.0.5.img UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-source.zip > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.0.5 >/dev/null 2>&1; then
+            echo 'v0.0.5 already exists; leaving it unchanged.'
+            exit 0
+          fi
+          gh release create v0.0.5 \
+            UN_Orion-v0.0.5.img \
+            UN_Orion-v0.0.5-install.iso \
+            UN_Orion-v0.0.5-source.zip \
+            SHA256SUMS.txt \
+            --target 23e0d72ddd624308ff7fc25b36324001b35bbed8 \
+            --title 'UN_Orion v0.0.5 Network & Vela Preview' \
+            --notes-file - <<'EOF'
+          UN_Orion v0.0.5 turns the desktop preview into a network-capable system and introduces its own browser stack.
+
+          Highlights:
+          - from-scratch x86_64 UEFI kernel and native framebuffer desktop
+          - RTL8139 PCI network driver
+          - Ethernet II, ARP, IPv4, ICMP, UDP, DNS and a minimal TCP client
+          - HTTP/1.0 GET support
+          - UN_Vela 0.1 native browser
+          - Aster Engine 0.1 HTML tokenizer/DOM/layout/paint pipeline
+          - Network desktop application
+          - OpenWrt lab profile and dual-VM test topology helper
+          - real UEFI El Torito install/live ISO
+          - pure-Python ISO builder, with no xorriso dependency
+          - CI verifies raw-disk boot, DVD/ISO boot and a real HTTP transaction before publishing
+
+          Known limitations:
+          - static IPv4 configuration; DHCP is not implemented yet
+          - HTTP only; TLS/HTTPS is not implemented yet
+          - Aster is an early engine without CSS, JavaScript, images or full HTML5 parsing
+          - Files/Notes are not yet persistent and ORX disk loading is still in progress
+          EOF
