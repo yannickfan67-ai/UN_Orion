@@ -1,0 +1,72 @@
+name: publish-v0.0.4
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-v0.0.4.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout v0.0.4 desktop source
+        uses: actions/checkout@v4
+        with:
+          ref: 280a7249acf3268bd1853b9b438b9588a35b80e2
+          fetch-depth: 0
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
+
+      - name: Build and smoke test
+        run: |
+          make clean
+          make all
+          make smoke
+
+      - name: Prepare release assets
+        run: |
+          cp build/orion.img UN_Orion-v0.0.4-desktop.img
+          git archive --format=zip --output=UN_Orion-v0.0.4-source.zip 280a7249acf3268bd1853b9b438b9588a35b80e2
+          sha256sum UN_Orion-v0.0.4-desktop.img UN_Orion-v0.0.4-source.zip > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.0.4 >/dev/null 2>&1; then
+            echo 'v0.0.4 already exists; leaving it unchanged.'
+            exit 0
+          fi
+          gh release create v0.0.4 \
+            UN_Orion-v0.0.4-desktop.img \
+            UN_Orion-v0.0.4-source.zip \
+            SHA256SUMS.txt \
+            --target 280a7249acf3268bd1853b9b438b9588a35b80e2 \
+            --title 'UN_Orion v0.0.4 Desktop Preview' \
+            --notes-file - <<'EOF'
+          UN_Orion's first desktop-focused release.
+
+          Highlights:
+          - from-scratch x86_64 UEFI kernel
+          - native framebuffer desktop instead of a diagnostic dashboard
+          - Traf Typeface v2.1 / 2.100
+          - taskbar and Start menu
+          - PS/2 mouse through IRQ12 with a real mouse cursor
+          - movable and focusable application windows
+          - Terminal application with Orion shell commands
+          - Files application shell
+          - editable Notes application
+          - Paint application with mouse drawing
+          - About application
+          - PIT timer, GDT/IDT, exception handling and panic screen
+          - early 4 KiB physical page allocator
+          - QEMU/OVMF smoke-tested from a clean GitHub Actions runner before publishing
+
+          This remains an early desktop preview. Files/Notes currently do not yet persist changes to disk; persistent filesystem support is the next major desktop milestone.
+          EOF
