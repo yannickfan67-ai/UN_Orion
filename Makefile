@@ -17,7 +17,7 @@ EFILIBDIR := /usr/lib
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE_4M.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
-.PHONY: all clean run image kernel smoke network-smoke
+.PHONY: all clean run image iso kernel smoke iso-smoke network-smoke
 all: image
 kernel: $(BUILD)/kernel.elf
 
@@ -50,6 +50,9 @@ $(BUILD)/BOOTX64.EFI: $(BUILD)/BOOTX64.so
 image: $(BUILD)/kernel.elf $(BUILD)/BOOTX64.EFI tools/mkfat.py
 	python3 tools/mkfat.py $(BUILD)/orion.img $(BUILD)/BOOTX64.EFI $(BUILD)/kernel.elf
 
+iso: image tools/mkiso.py
+	python3 tools/mkiso.py $(BUILD)/orion.img $(BUILD)/UN_Orion-v0.0.5-install.iso
+
 $(BUILD)/OVMF_VARS.fd: | $(BUILD)
 	cp $(OVMF_VARS) $@
 
@@ -74,6 +77,19 @@ smoke: image $(BUILD)/OVMF_VARS.fd
 	grep -q "Orion desktop ready" $(BUILD)/serial.log
 	grep -q "Network stack ready" $(BUILD)/serial.log
 	@echo "QEMU smoke test passed"
+
+iso-smoke: iso $(BUILD)/OVMF_VARS.fd
+	rm -f $(BUILD)/serial-iso.log
+	@set +e; timeout 12s qemu-system-x86_64 -machine q35 -m 256M \
+		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
+		-cdrom $(BUILD)/UN_Orion-v0.0.5-install.iso -boot d \
+		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -display none -monitor none -serial file:$(BUILD)/serial-iso.log; rc=$$?; \
+		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
+	grep -q "UN_Orion bootloader" $(BUILD)/serial-iso.log
+	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial-iso.log
+	grep -q "Orion desktop ready" $(BUILD)/serial-iso.log
+	@echo "UEFI install ISO smoke test passed"
 
 network-smoke: image
 	python3 scripts/network_smoke.py
