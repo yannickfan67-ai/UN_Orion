@@ -15,7 +15,7 @@ jobs:
       - name: Checkout v0.0.5 source
         uses: actions/checkout@v4
         with:
-          ref: 23e0d72ddd624308ff7fc25b36324001b35bbed8
+          ref: b4bb0875cb729e374e8227324c20339dcd62bc69
           fetch-depth: 0
 
       - name: Install toolchain
@@ -36,7 +36,7 @@ jobs:
         run: |
           cp build/orion.img UN_Orion-v0.0.5.img
           cp build/UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-install.iso
-          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip 23e0d72ddd624308ff7fc25b36324001b35bbed8
+          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip b4bb0875cb729e374e8227324c20339dcd62bc69
           sha256sum UN_Orion-v0.0.5.img UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-source.zip > SHA256SUMS.txt
 
       - name: Create GitHub Release
@@ -52,7 +52,7 @@ jobs:
             UN_Orion-v0.0.5-install.iso \
             UN_Orion-v0.0.5-source.zip \
             SHA256SUMS.txt \
-            --target 23e0d72ddd624308ff7fc25b36324001b35bbed8 \
+            --target b4bb0875cb729e374e8227324c20339dcd62bc69 \
             --title 'UN_Orion v0.0.5 Network & Vela Preview' \
             --notes-file - <<'EOF'
           UN_Orion v0.0.5 turns the desktop preview into a network-capable system and introduces its own browser stack.
