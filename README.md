@@ -1,77 +1,60 @@
 # UN_Orion
 
-UN_Orion is a from-scratch x86_64 hobby operating system. It boots through UEFI, leaves firmware services, installs its own CPU tables and interrupt path, and draws its own interface directly into the GOP framebuffer.
+UN_Orion is a from-scratch x86_64 operating system project. It boots through UEFI and runs its own kernel, interrupts, memory allocator, graphics stack, input path, and desktop environment.
 
-## Current development status — v0.0.3
+## Current development status — v0.0.4 Desktop Preview
 
-### Boot and display
-- x86_64 ELF kernel loaded by a GNU-EFI UEFI loader
-- GOP framebuffer UI with RGB/BGR handling
-- Traf Typeface v2.1 / Version 2.100 embedded as kernel bitmap data
-- self-contained Python FAT16 image builder (`tools/mkfat.py`)
+The default interface is now a desktop rather than a hardware/status dashboard.
 
-### CPU and interrupts
-- own GDT
-- own IDT
-- CPU exception stubs for vectors 0–31
-- framebuffer + COM1 panic screen with vector/error/RIP diagnostics
-- remapped 8259 PIC
-- PIT IRQ0 clock at ~100 Hz
-- PS/2 keyboard IRQ1 input
+### Desktop
 
-### Memory
-- UEFI memory-map handoff
-- early 4 KiB physical page allocator over conventional memory
-- low-memory and kernel/framebuffer/boot-info reservations
-- PMM total/free/used statistics
+- Traf Typeface v2.1 throughout the UI
+- wallpaper and bottom taskbar
+- launcher / Start menu
+- real PS/2 mouse support through IRQ12
+- software mouse cursor
+- draggable/focusable/minimizable/closable windows
+- taskbar app switching
+- desktop application shortcuts
 
-### Console
-Interactive Orion Console commands:
+### Native applications
 
-`help`, `clear`, `info`, `cpu`, `mem`, `pmm`, `alloc`, `uptime`, `reboot`, `halt`, `fault`
+- **Terminal** — interactive Orion shell
+- **Files** — desktop-style file/application browser shell
+- **Notes** — editable text document in RAM
+- **Paint** — mouse-driven drawing canvas with Clear action
+- **About** — kernel/memory/input information, moved out of the main desktop
 
-`fault` deliberately executes an invalid opcode to test the CPU exception/panic path.
+### Kernel foundation
 
-### Diagnostics
-- COM1 serial boot diagnostics
-- CPU vendor/brand via CPUID
-- live uptime display driven by PIT ticks
-- QEMU/OVMF smoke tests in GitHub Actions
+- x86_64 UEFI ELF loader
+- GOP framebuffer graphics
+- own GDT and IDT
+- 8259 PIC remap
+- PIT IRQ0 at ~100 Hz
+- PS/2 keyboard IRQ1
+- PS/2 mouse IRQ12
+- physical page allocator using the UEFI memory map
+- CPU exception vectors 0–31 with graphical panic screen
+- COM1 serial diagnostics
+- pure-Python FAT16 image builder
 
-## Releases
-
-The first packaged developer release is `v0.0.2`. Current `main` is ahead of that release while v0.0.3 is developed and tested.
-
-## Toolchain
+## Build
 
 On Debian/Ubuntu:
 
 ```bash
 sudo apt install clang lld llvm make qemu-system-x86 ovmf gnu-efi
-```
-
-Python 3 is required for the font-data generator and FAT16 image builder.
-
-## Build
-
-```bash
 make
-```
-
-The image is generated at `build/orion.img`.
-
-## Run
-
-```bash
 make run
 ```
 
-## Smoke test
+The boot image is written to `build/orion.img`.
 
-```bash
-make smoke
-```
+## Terminal commands
 
-## Next kernel work
+`help`, `clear`, `info`, `mem`, `alloc`, `uptime`, `desktop`
 
-The next major steps are taking ownership of x86_64 page tables, adding a reusable page free-list/bitmap, moving from the legacy PIT/PIC path toward APIC/HPET where available, reading files from the boot filesystem inside the kernel, and defining a syscall/userspace process boundary.
+## Direction
+
+The desktop is now the primary UI. Upcoming work should make the applications deeper: persistent files, real disk/filesystem access, application/process separation, richer widgets, and eventually userspace instead of moving back toward a diagnostics-first interface.
