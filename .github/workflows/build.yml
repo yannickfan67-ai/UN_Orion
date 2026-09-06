@@ -1,0 +1,24 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi mtools dosfstools
+      - name: Build boot image
+        run: make all
+      - name: QEMU smoke test
+        run: make smoke
+      - name: Upload boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: UN_Orion-v0.0.1-image
+          path: build/orion.img
