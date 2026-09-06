@@ -39,6 +39,16 @@ jobs:
           git archive --format=zip --output=UN_Orion-v0.0.5-source.zip b4bb0875cb729e374e8227324c20339dcd62bc69
           sha256sum UN_Orion-v0.0.5.img UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-source.zip > SHA256SUMS.txt
 
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: UN_Orion-v0.0.5-verified-release-bundle
+          path: |
+            UN_Orion-v0.0.5.img
+            UN_Orion-v0.0.5-install.iso
+            UN_Orion-v0.0.5-source.zip
+            SHA256SUMS.txt
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
