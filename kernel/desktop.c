@@ -1,0 +1,92 @@
+#include <stdint.h>
+#include <stddef.h>
+#include "bootinfo.h"
+#include "graphics.h"
+#include "interrupts.h"
+#include "pmm.h"
+#include "serial.h"
+#include "io.h"
+#include "desktop.h"
+
+#define VERSION "0.0.4"
+#define TASKBAR_H 54
+#define TITLE_H 42
+#define APP_COUNT 5
+#define APP_TERMINAL 0
+#define APP_FILES 1
+#define APP_NOTES 2
+#define APP_PAINT 3
+#define APP_ABOUT 4
+#define TERM_LINES 13
+#define TERM_LEN 76
+#define NOTE_CAP 1536
+#define PAINT_W 640
+#define PAINT_H 360
+
+typedef struct{int x,y,w,h;int open,minimized,z;const char *title;} Window;
+static Window wins[APP_COUNT];
+static int ztop=10;
+static int active_app=-1;
+static int start_open;
+static int dragging=-1,drag_dx,drag_dy;
+static int mouse_x=700,mouse_y=420;
+static int mouse_left,mouse_prev_left;
+static uint8_t mpkt[3];static int mpkt_i;
+static int shift_down;
+static uint64_t last_second=(uint64_t)-1;
+static OrionBootInfo *g_bi;
+
+static char term_lines[TERM_LINES][TERM_LEN];static int term_count;
+static char term_cmd[64];static int term_len;
+static char notes[NOTE_CAP]="Welcome to UN_Orion Notes.\n\nThis is a real editable desktop application.\nType here with the keyboard.";static int note_len=101;
+static uint8_t paint[PAINT_W*PAINT_H];
+
+static uint32_t cursor_under[16*24];static int cursor_saved,cursor_sx,cursor_sy;
+static const uint16_t cursor_shape[18]={0x8000,0xC000,0xE000,0xF000,0xF800,0xFC00,0xFE00,0xFF00,0xFF80,0xF800,0xDC00,0x8E00,0x0600,0x0700,0x0300,0x0300,0x0000,0x0000};
+
+static int inside(int x,int y,int rx,int ry,int rw,int rh){return x>=rx&&y>=ry&&x<rx+rw&&y<ry+rh;}
+static int streq(const char*a,const char*b){while(*a&&*b&&*a==*b){a++;b++;}return *a==*b;}
+static void append(char*a,const char*b,size_t cap){size_t i=0;while(i<cap&&a[i])i++;while(i+1<cap&&b&&*b)a[i++]=*b++;if(i<cap)a[i]=0;}
+static void u64dec(uint64_t v,char*out){char t[24];int n=0;if(!v){out[0]='0';out[1]=0;return;}while(v){t[n++]=(char)('0'+v%10);v/=10;}for(int i=0;i<n;i++)out[i]=t[n-1-i];out[n]=0;}
+static void hex64(uint64_t v,char out[19]){static const char h[]="0123456789ABCDEF";out[0]='0';out[1]='x';for(int i=0;i<16;i++)out[i+2]=h[(v>>(60-4*i))&15];out[18]=0;}
+
+static void cursor_restore(void){if(!cursor_saved)return;for(int y=0;y<24;y++)for(int x=0;x<16;x++)gfx_put_raw((uint32_t)(cursor_sx+x),(uint32_t)(cursor_sy+y),cursor_under[y*16+x]);cursor_saved=0;}
+static void cursor_capture(void){cursor_sx=mouse_x;cursor_sy=mouse_y;for(int y=0;y<24;y++)for(int x=0;x<16;x++)cursor_under[y*16+x]=gfx_get_raw((uint32_t)(mouse_x+x),(uint32_t)(mouse_y+y));cursor_saved=1;}
+static void cursor_draw(void){for(int y=0;y<18;y++){uint16_t row=cursor_shape[y];for(int x=0;x<12;x++)if(row&(0x8000u>>x)){gfx_pixel((uint32_t)(mouse_x+x),(uint32_t)(mouse_y+y),x<2||y<2?0xFFFFFF:0x111820);}}}
+static void cursor_refresh(void){cursor_capture();cursor_draw();}
+
+static void draw_wallpaper(void){
+    uint32_t W=gfx_width(),H=gfx_height();
+    for(uint32_t y=0;y<H-TASKBAR_H;y+=8){uint32_t t=(y*100)/(H?H:1);uint32_t r=20-(t*7/100),g=35-(t*12/100),b=58-(t*17/100);gfx_rect(0,y,W,8,(r<<16)|(g<<8)|b);}
+    gfx_rect(W>390?W-390:0,80,260,260,0x162B47);gfx_rect(W>355?W-355:0,115,190,190,0x183451);gfx_rect(W>320?W-320:0,150,120,120,0x1B3E5E);
+    if(W>900){gfx_display_text(W-515,126,"ORION",0x274E73);gfx_text(W-510,196,"A DESKTOP BUILT DIRECTLY ON THE KERNEL",0x385F82,1);}
+}
+static void icon_box(int x,int y,const char*label,int kind){
+    gfx_rect(x+10,y,48,48,0x1B2C42);
+    if(kind==APP_TERMINAL){gfx_rect(x+19,y+13,30,22,0x0C1118);gfx_text(x+22,y+10,">_",0x78B8FF,1);}
+    else if(kind==APP_FILES){gfx_rect(x+17,y+15,34,25,0xE5B95C);gfx_rect(x+20,y+10,16,8,0xF1CA74);}
+    else if(kind==APP_NOTES){gfx_rect(x+18,y+9,32,34,0xF1F4F7);for(int i=0;i<4;i++)gfx_line_h(x+23,y+17+i*6,20,0x7990A7);}
+    else if(kind==APP_PAINT){gfx_rect(x+18,y+10,32,32,0xF4F5F6);gfx_rect(x+23,y+15,8,8,0x62A8FF);gfx_rect(x+34,y+25,10,10,0xE07388);}
+    else {gfx_rect(x+18,y+10,32,32,0x223C5E);gfx_text(x+29,y+10,"i",0xD8E9FB,1);}
+    gfx_text(x,y+53,label,0xE4ECF5,1);
+}
+static void draw_desktop_icons(void){icon_box(26,42,"Terminal",APP_TERMINAL);icon_box(26,133,"Files",APP_FILES);icon_box(26,224,"Notes",APP_NOTES);icon_box(26,315,"Paint",APP_PAINT);}
+
+static void draw_taskbar(void){
+    uint32_t W=gfx_width(),H=gfx_height(),y=H-TASKBAR_H;gfx_rect(0,y,W,TASKBAR_H,0x0C121B);gfx_line_h(0,y,W,0x33445A);
+    gfx_rect(14,y+9,38,36,start_open?0x284B72:0x16263A);gfx_rect(23,y+17,20,20,0x5CA8FF);gfx_text(29,y+12,"O",0xF6FAFE,1);
+    for(int i=0;i<APP_COUNT;i++){int x=70+i*48;if(wins[i].open&&!wins[i].minimized)gfx_rect(x,y+8,40,38,active_app==i?0x263D59:0x172638);else gfx_rect(x,y+8,40,38,0x111C2A);gfx_text(x+13,y+11,i==0?">":i==1?"F":i==2?"N":i==3?"P":"i",0xDDE8F3,1);}
+    uint64_t sec=timer_frequency()?timer_ticks()/timer_frequency():0;char t[24]="UP ",n[20];u64dec(sec,n);append(t,n,sizeof(t));append(t,"s",sizeof(t));gfx_text_right(W-22,y+12,t,0xA4B5C8);
+}
+static void draw_start_menu(void){
+    if(!start_open)return;uint32_t H=gfx_height();int x=14,y=(int)H-TASKBAR_H-344,w=280,h=334;gfx_rect(x+6,y+6,w,h,0x08101A);gfx_rect(x,y,w,h,0x142130);gfx_rect(x,y,w,58,0x19304A);gfx_text(x+20,y+14,"UN ORION",0xEDF5FD,1);gfx_text(x+20,y+38,"Desktop Preview " VERSION,0x7894B0,1);
+    const char*names[APP_COUNT]={"Terminal","Files","Notes","Paint","About"};for(int i=0;i<APP_COUNT;i++){int iy=y+70+i*45;if(inside(mouse_x,mouse_y,x+10,iy,w-20,38))gfx_rect(x+10,iy,w-20,38,0x203A56);gfx_text(x+24,iy+5,names[i],0xE4EDF6,1);}
+    gfx_line_h(x+14,y+300,w-28,0x314255);gfx_text(x+24,y+305,"Shut down",0xD5A0AA,1);
+}
+static void draw_window_frame(int app){
+    Window *w=&wins[app];if(!w->open||w->minimized)return;gfx_rect(w->x+7,w->y+8,w->w,w->h,0x07101A);gfx_rect(w->x,w->y,w->w,w->h,0xEDF1F5);gfx_rect(w->x,w->y,w->w,TITLE_H,active_app==app?0x15283D:0x26313E);gfx_text(w->x+16,w->y+7,w->title,0xF0F5FA,1);gfx_rect(w->x+w->w-40,w->y+5,34,31,inside(mouse_x,mouse_y,w->x+w->w-40,w->y+5,34,31)?0xA94052:0x263747);gfx_text(w->x+w->w-29,w->y+5,"x",0xF8EDF0,1);gfx_line_h(w->x,w->y+TITLE_H,w->w,0xC5CED8);
+}
+static void term_push(const char*s){int row;if(term_count<TERM_LINES)row=term_count++;else{for(int i=0;i<TERM_LINES-1;i++)for(int j=0;j<TERM_LEN;j++)term_lines[i][j]=term_lines[i+1][j];row=TERM_LINES-1;}int j=0;while(s&&*s&&j<TERM_LEN-1)term_lines[row][j++]=*s++;term_lines[row][j]=0;}
+static void draw_terminal(Window*w){int bx=w->x+1,by=w->y+TITLE_H+1,bw=w->w-2,bh=w->h-TITLE_H-2;gfx_rect(bx,by,bw,bh,0x0A1018);gfx_text(bx+18,by+14,"Orion Terminal",0x7FB9F4,1);gfx_text_right(bx+bw-18,by+14,"shell",0x5E748B);int y=by+48;for(int i=0;i<term_count;i++,y+=23)gfx_text(bx+18,y,term_lines[i],0xAABBCD,1);gfx_rect(bx+14,by+bh-42,bw-28,30,0x0E1722);gfx_text(bx+21,by+bh-39,"orion >",0x65AFFF,1);gfx_text(bx+116,by+bh-39,term_cmd,0xE6EEF6,1);}
+static void draw_files(Window*w){int bx=w->x+1,by=w->y+TITLE_H+1,bw=w->w-2,bh=w->h-TITLE_H-2;gfx_rect(bx,by,bw,bh,0xF2F5F8);gfx_rect(bx,by,150,bh,0xE4EAF0);gfx_text(bx+18,by+16,"Home",0x253749,1);gfx_text(bx+18,by+54,"Desktop",0x5F7184,1);gfx_text(bx+18,by+87,"Documents",0x5F7184,1);gfx_text(bx+18,by+120,"System",0x5F7184,1);gfx_text(bx+178,by+18,"Home",0x213548,1);gfx_line_h(bx+175,by+50,bw-195,0xD0D9E2);icon_box(bx+185,by+70,"Notes.txt",APP_NOTES);icon_box(bx+290,by+70,"Canvas",APP_PAINT);icon_box(bx+395,by+70,"Terminal",APP_TERMINAL);gfx_text(bx+180,by+175,"These items open real Orion desktop applications.",0x66798D,1);}
+static void draw_notes(Window*w){int bx=w->x+1,by=w->y+TITLE_H+1,bw=w->w-2,bh=w->h-TITLE_H-2;gfx_rect(bx,by,bw,bh,0xFAF9F2);gfx_rect(bx,by,bw,36,0xE7E4D8);gfx_text(bx+16,by+3,"Notes   editable RAM document",0x4A4B46,1);int x=bx+20,y=by+52,col=0;char one[2]={0,0};for(int i=0;i<note_len&&y<by+bh-28;i++){char c=notes[i];if(c=='\n'||col>58){y+=24;x=bx+20;col=0;if(c=='\n')continue;}one[0]=c;uint32_t adv=gfx_text((uint32_t)x,(uint32_t)y,one,0x303B43,1);x+=(int)adv;col++;}gfx_rect('uint32_t)x,(uint32_t)(y+25),10,2,0x406DAA);}

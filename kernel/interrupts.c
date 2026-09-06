@@ -28,6 +28,9 @@ static volatile uint64_t g_ticks;
 static uint32_t g_pit_hz=100;
 static uint8_t keyq[64];
 static volatile uint8_t key_head,key_tail;
+static uint8_t mouseq[128];
+static volatile uint8_t mouse_head,mouse_tail;
+static int g_mouse_available;
 
 void arch_gdt_init(void){struct GdtPtr p={sizeof(gdt)-1,(uint64_t)(uintptr_t)gdt};orion_load_gdt(&p);}
 
@@ -41,7 +44,8 @@ static void pic_remap(void){
     outb(PIC1_DATA,0x20);io_wait(); outb(PIC2_DATA,0x28);io_wait();
     outb(PIC1_DATA,4);io_wait(); outb(PIC2_DATA,2);io_wait();
     outb(PIC1_DATA,1);io_wait(); outb(PIC2_DATA,1);io_wait();
-    outb(PIC1_DATA,0xFC); outb(PIC2_DATA,0xFF);
+    /* IRQ0 timer, IRQ1 keyboard, IRQ2 cascade; IRQ12 mouse on slave IRQ4. */
+    outb(PIC1_DATA,0xF8); outb(PIC2_DATA,0xEF);
 }
 static void pit_program(uint32_t hz){
     if(hz<19)hz=19; if(hz>1000)hz=1000;
@@ -54,18 +58,37 @@ __attribute__((interrupt)) static void keyboard_isr(struct IntFrame *f){
     (void)f; uint8_t s=inb(0x60); uint8_t next=(uint8_t)(key_head+1)&63;
     if(next!=key_tail){keyq[key_head]=s;key_head=next;} outb(PIC1,0x20);
 }
+__attribute__((interrupt)) static void mouse_isr(struct IntFrame *f){
+    (void)f; uint8_t b=inb(0x60); uint8_t next=(uint8_t)(mouse_head+1)&127;
+    if(next!=mouse_tail){mouseq[mouse_head]=b;mouse_head=next;}
+    outb(PIC2,0x20); outb(PIC1,0x20);
+}
+static int ps2_wait_write(void){for(unsigned i=0;i<100000;i++)if((inb(0x64)&2)==0)return 1;return 0;}
+static int ps2_wait_read(void){for(unsigned i=0;i<100000;i++)if(inb(0x64)&1)return 1;return 0;}
+static int mouse_write(uint8_t v){if(!ps2_wait_write())return 0;outb(0x64,0xD4);if(!ps2_wait_write())return 0;outb(0x60,v);if(!ps2_wait_read())return 0;return inb(0x60)==0xFA;}
+static void mouse_init(void){
+    if(!ps2_wait_write())return; outb(0x64,0xA8);
+    if(!ps2_wait_write())return; outb(0x64,0x20);
+    if(!ps2_wait_read())return; uint8_t cmd=inb(0x60); cmd|=0x02; cmd&=(uint8_t)~0x20;
+    if(!ps2_wait_write())return; outb(0x64,0x60); if(!ps2_wait_write())return; outb(0x60,cmd);
+    if(!mouse_write(0xF6))return; if(!mouse_write(0xF4))return; g_mouse_available=1;
+}
 void interrupts_init(uint32_t pit_hz){
     for(int i=0;i<256;i++)idt[i]=(IdtGate){0};
     for(int i=0;i<32;i++)idt_gate(i,orion_exception_stub_table[i]);
-    idt_gate(32,(void*)pit_isr); idt_gate(33,(void*)keyboard_isr);
+    idt_gate(32,(void*)pit_isr); idt_gate(33,(void*)keyboard_isr); idt_gate(44,(void*)mouse_isr);
     struct IdtPtr p={sizeof(idt)-1,(uint64_t)(uintptr_t)idt}; __asm__ volatile("lidt %0"::"m"(p));
-    pic_remap(); pit_program(pit_hz);
+    pic_remap(); pit_program(pit_hz); mouse_init();
 }
 uint64_t timer_ticks(void){return g_ticks;}
 uint32_t timer_frequency(void){return g_pit_hz;}
 int keyboard_pop_scancode(uint8_t *scan){
     if(key_tail==key_head)return 0; if(scan)*scan=keyq[key_tail]; key_tail=(uint8_t)(key_tail+1)&63; return 1;
 }
+int mouse_pop_byte(uint8_t *byte){
+    if(mouse_tail==mouse_head)return 0; if(byte)*byte=mouseq[mouse_tail]; mouse_tail=(uint8_t)(mouse_tail+1)&127; return 1;
+}
+int mouse_available(void){return g_mouse_available;}
 static const char *exception_name(uint64_t v){
     switch(v){
         case 0:return "DIVIDE ERROR"; case 1:return "DEBUG"; case 2:return "NON-MASKABLE INTERRUPT";

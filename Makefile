@@ -7,7 +7,7 @@ LD := ld.lld
 
 KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
-KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c
+KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
 EFIINC := /usr/include/efi
@@ -68,9 +68,10 @@ smoke: image $(BUILD)/OVMF_VARS.fd
 		-drive format=raw,file=$(BUILD)/orion.img \
 		-nic none -display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
-	grep -q "UN_Orion kernel 0.0.3 alive" $(BUILD)/serial.log
+	grep -q "UN_Orion kernel 0.0.4 alive" $(BUILD)/serial.log
 	grep -q "PMM ready" $(BUILD)/serial.log
 	grep -q "IDT/PIC/PIT/keyboard ready" $(BUILD)/serial.log
+	grep -q "Orion desktop ready" $(BUILD)/serial.log
 	@echo "QEMU smoke test passed"
 
 clean:

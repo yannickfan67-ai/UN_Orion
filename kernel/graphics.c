@@ -12,6 +12,21 @@ void gfx_init(OrionBootInfo *bi){g_bi=bi;}
 int gfx_ready(void){return g_bi&&g_bi->framebuffer_base!=0;}
 uint32_t gfx_width(void){return g_bi?g_bi->width:0;}
 uint32_t gfx_height(void){return g_bi?g_bi->height:0;}
+void gfx_pixel(uint32_t x,uint32_t y,uint32_t c){
+    if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return;
+    volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
+    fb[(uint64_t)y*g_bi->pixels_per_scanline+x]=pack_pixel(c);
+}
+uint32_t gfx_get_raw(uint32_t x,uint32_t y){
+    if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return 0;
+    volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
+    return fb[(uint64_t)y*g_bi->pixels_per_scanline+x];
+}
+void gfx_put_raw(uint32_t x,uint32_t y,uint32_t raw){
+    if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return;
+    volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
+    fb[(uint64_t)y*g_bi->pixels_per_scanline+x]=raw;
+}
 void gfx_rect(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t c){
     if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return;
     if(x+w>g_bi->width)w=g_bi->width-x; if(y+h>g_bi->height)h=g_bi->height-y;
