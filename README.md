@@ -1,60 +1,68 @@
 # UN_Orion
 
-UN_Orion is a from-scratch x86_64 operating system project. It boots through UEFI and runs its own kernel, interrupts, memory allocator, graphics stack, input path, and desktop environment.
+UN_Orion is a from-scratch x86_64 UEFI operating system with its own framebuffer desktop.
 
-## Current development status — v0.0.4 Desktop Preview
-
-The default interface is now a desktop rather than a hardware/status dashboard.
+## Current development status — v0.0.5
 
 ### Desktop
+- native framebuffer desktop using Traf Typeface v2.1 / 2.100
+- taskbar + Start menu
+- PS/2 mouse (IRQ12), real cursor, movable/focusable windows
+- Terminal, Files, Notes, Paint, About
+- **Orion Browser** with address bar and minimal HTML text rendering
+- **Network** control panel with live adapter/IP/gateway/packet counters and gateway ping
 
-- Traf Typeface v2.1 throughout the UI
-- wallpaper and bottom taskbar
-- launcher / Start menu
-- real PS/2 mouse support through IRQ12
-- software mouse cursor
-- draggable/focusable/minimizable/closable windows
-- taskbar app switching
-- desktop application shortcuts
+### Networking
+The first network stack is intentionally small but real:
+- PCI enumeration
+- RTL8139 driver (PIO + DMA rings, polling RX)
+- Ethernet II
+- ARP
+- IPv4
+- ICMP echo
+- UDP
+- DNS A lookup
+- minimal TCP client
+- HTTP/1.0 GET
 
-### Native applications
+Default QEMU user-network profile:
+- guest `10.0.2.15/24`
+- gateway `10.0.2.2`
+- DNS `10.0.2.3`
 
-- **Terminal** — interactive Orion shell
-- **Files** — desktop-style file/application browser shell
-- **Notes** — editable text document in RAM
-- **Paint** — mouse-driven drawing canvas with Clear action
-- **About** — kernel/memory/input information, moved out of the main desktop
+Terminal commands include `net`, `ping`, `browser`, `nettest`, and `openwrt`.
+`openwrt` switches the early static profile to `192.168.1.2/24`, gateway/DNS `192.168.1.1`.
 
-### Kernel foundation
+### OpenWrt lab
+`scripts/run-openwrt-lab.sh` wires two QEMU machines without TAP/root networking:
 
-- x86_64 UEFI ELF loader
-- GOP framebuffer graphics
-- own GDT and IDT
-- 8259 PIC remap
-- PIT IRQ0 at ~100 Hz
-- PS/2 keyboard IRQ1
-- PS/2 mouse IRQ12
-- physical page allocator using the UEFI memory map
-- CPU exception vectors 0–31 with graphical panic screen
-- COM1 serial diagnostics
-- pure-Python FAT16 image builder
+`Internet <- QEMU user NAT <- OpenWrt WAN | OpenWrt LAN <- socket LAN -> UN_Orion`
+
+Usage:
+```bash
+make all
+OPENWRT_IMAGE=/path/to/openwrt-x86-64.img ./scripts/run-openwrt-lab.sh
+```
+Then in Orion Terminal:
+```text
+openwrt
+ping
+browser
+```
+and browse `192.168.1.1/` if the OpenWrt image exposes an HTTP UI.
 
 ## Build
-
-On Debian/Ubuntu:
-
 ```bash
 sudo apt install clang lld llvm make qemu-system-x86 ovmf gnu-efi
 make
 make run
 ```
 
-The boot image is written to `build/orion.img`.
+## Current limitations
+- IPv4 configuration is static; DHCP is the next network milestone.
+- TCP is a small synchronous client, not yet a general socket API.
+- HTTP only; TLS/HTTPS is not implemented yet.
+- HTML rendering is text-oriented; CSS/JS/images are not implemented yet.
+- Files/Notes persistence and ORX loading from disk are still in progress.
 
-## Terminal commands
-
-`help`, `clear`, `info`, `mem`, `alloc`, `uptime`, `desktop`
-
-## Direction
-
-The desktop is now the primary UI. Upcoming work should make the applications deeper: persistent files, real disk/filesystem access, application/process separation, richer widgets, and eventually userspace instead of moving back toward a diagnostics-first interface.
+Stable desktop release: `v0.0.4`. Current `main` is the v0.0.5 network/browser development line.

@@ -7,7 +7,7 @@ LD := ld.lld
 
 KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
-KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c
+KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/net.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
 EFIINC := /usr/include/efi
@@ -17,7 +17,7 @@ EFILIBDIR := /usr/lib
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE_4M.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
-.PHONY: all clean run image kernel smoke
+.PHONY: all clean run image kernel smoke network-smoke
 all: image
 kernel: $(BUILD)/kernel.elf
 
@@ -58,7 +58,7 @@ run: image $(BUILD)/OVMF_VARS.fd
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
 		-drive format=raw,file=$(BUILD)/orion.img \
-		-nic none -serial stdio
+		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -serial stdio
 
 smoke: image $(BUILD)/OVMF_VARS.fd
 	rm -f $(BUILD)/serial.log
@@ -66,13 +66,17 @@ smoke: image $(BUILD)/OVMF_VARS.fd
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS.fd \
 		-drive format=raw,file=$(BUILD)/orion.img \
-		-nic none -display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
+		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
-	grep -q "UN_Orion kernel 0.0.4 alive" $(BUILD)/serial.log
+	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial.log
 	grep -q "PMM ready" $(BUILD)/serial.log
 	grep -q "IDT/PIC/PIT/keyboard ready" $(BUILD)/serial.log
 	grep -q "Orion desktop ready" $(BUILD)/serial.log
+	grep -q "Network stack ready" $(BUILD)/serial.log
 	@echo "QEMU smoke test passed"
+
+network-smoke: image
+	python3 scripts/network_smoke.py
 
 clean:
 	rm -rf $(BUILD)

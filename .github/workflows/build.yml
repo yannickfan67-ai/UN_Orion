@@ -15,8 +15,10 @@ jobs:
           sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
       - name: Build boot image
         run: make all
-      - name: QEMU smoke test
+      - name: QEMU boot smoke test
         run: make smoke
+      - name: QEMU network HTTP smoke test
+        run: make network-smoke
       - name: Prepare local-test firmware
         run: |
           code="$(find /usr/share/OVMF -maxdepth 1 -type f \( -name 'OVMF_CODE_4M.fd' -o -name 'OVMF_CODE.fd' \) | head -n1)"
@@ -27,7 +29,7 @@ jobs:
       - name: Upload boot image
         uses: actions/upload-artifact@v4
         with:
-          name: UN_Orion-v0.0.4-desktop-image
+          name: UN_Orion-v0.0.5-network-browser-image
           path: |
             build/orion.img
             build/OVMF_CODE.localtest.fd
