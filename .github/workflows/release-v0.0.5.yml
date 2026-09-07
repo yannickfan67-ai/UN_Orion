@@ -15,7 +15,7 @@ jobs:
       - name: Checkout verified v0.0.5 source
         uses: actions/checkout@v4
         with:
-          ref: 026a4cda2a305c34dc5546c24ea2da0d45096ac8
+          ref: 83e6cf94e3eaf4c5894b60465a24b102db151614
           fetch-depth: 0
 
       - name: Install toolchain
@@ -23,32 +23,47 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
 
-      - name: Clean build and verify disk, ISO and network
+      - name: Clean build and verify all boot paths
         run: |
           make clean
           make all
           make iso
+          make legacy-i686
           make smoke
+          make legacy-smoke
           make iso-smoke
+          make install-smoke
           make network-smoke
 
       - name: Prepare release assets
         run: |
-          cp build/orion.img UN_Orion-v0.0.5-network-browser.img
+          cp build/orion.img UN_Orion-v0.0.5-x86_64-uefi.img
+          cp build/UN_Orion-i686-bios.img UN_Orion-v0.0.5-i686-bios.img
           cp build/UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.5-install.iso
-          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip 026a4cda2a305c34dc5546c24ea2da0d45096ac8
+          cp build/orion-image.json orion-image-x86_64.json
+          cp build/orion-i686-bios.json orion-image-i686.json
+          cp build/orion-install.json orion-install-x86_64.json
+          git archive --format=zip --output=UN_Orion-v0.0.5-source.zip 83e6cf94e3eaf4c5894b60465a24b102db151614
           sha256sum \
-            UN_Orion-v0.0.5-network-browser.img \
+            UN_Orion-v0.0.5-x86_64-uefi.img \
+            UN_Orion-v0.0.5-i686-bios.img \
             UN_Orion-v0.0.5-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
             UN_Orion-v0.0.5-source.zip > SHA256SUMS.txt
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: UN_Orion-v0.0.5-verified-release-bundle
+          name: UN_Orion-v0.0.5-multi-firmware-release
           path: |
-            UN_Orion-v0.0.5-network-browser.img
+            UN_Orion-v0.0.5-x86_64-uefi.img
+            UN_Orion-v0.0.5-i686-bios.img
             UN_Orion-v0.0.5-install.iso
+            orion-image-x86_64.json
+            orion-image-i686.json
+            orion-install-x86_64.json
             UN_Orion-v0.0.5-source.zip
             SHA256SUMS.txt
 
@@ -61,35 +76,42 @@ jobs:
             exit 0
           fi
           gh release create v0.0.5 \
-            UN_Orion-v0.0.5-network-browser.img \
+            UN_Orion-v0.0.5-x86_64-uefi.img \
+            UN_Orion-v0.0.5-i686-bios.img \
             UN_Orion-v0.0.5-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
             UN_Orion-v0.0.5-source.zip \
             SHA256SUMS.txt \
-            --target 026a4cda2a305c34dc5546c24ea2da0d45096ac8 \
-            --title 'UN_Orion v0.0.5 Network & Vela Preview' \
+            --target 83e6cf94e3eaf4c5894b60465a24b102db151614 \
+            --title 'UN_Orion v0.0.5 Multi-Firmware & Vela Preview' \
             --notes-file - <<'EOF'
-          UN_Orion v0.0.5 turns the desktop preview into a network-capable system and introduces its own browser stack.
+          UN_Orion v0.0.5 expands the desktop preview into a network-capable, multi-firmware development release.
 
           Highlights:
           - from-scratch x86_64 UEFI kernel and native framebuffer desktop
-          - RTL8139 PCI network driver
-          - Ethernet II, ARP, IPv4, ICMP, UDP, DNS and a minimal TCP client
-          - HTTP/1.0 GET support
-          - UN_Vela 0.1 native browser shell
-          - Aster Engine 0.1 HTML tokenizer, DOM, layout and paint pipeline
-          - Network desktop application
+          - RTL8139 PCI networking with Ethernet II, ARP, IPv4, ICMP, UDP, DNS and minimal TCP
+          - HTTP/1.0 client path
+          - UN_Vela 0.1 browser shell and Aster Engine 0.1 rendering pipeline
           - Orion Browser retained as the lightweight/recovery browser line
-          - OpenWrt lab profile and virtual-LAN helper
-          - pure-Python ISO9660 / El Torito UEFI install-live media builder
-          - bootable UEFI DVD ISO in addition to the raw disk image
+          - bootable UEFI install ISO with an end-to-end target-disk installation smoke test
+          - Orion Image ABI manifests for boot media
+          - experimental i686 Legacy BIOS compatibility target
+          - i686 protected-mode bootstrap with VGA text output, CPUID and legacy-PC compatibility hooks
+          - 86Box CAIRO-5 / VIA-Centaur Samuel 600 MHz profile documented for local compatibility testing
 
-          Release verification on a clean GitHub Actions runner includes:
-          - raw-image QEMU/OVMF boot smoke test
+          Verification on a clean GitHub Actions runner includes:
+          - x86_64 raw-image UEFI boot smoke test
+          - i686 Legacy BIOS boot smoke test
           - El Torito UEFI DVD boot smoke test
-          - real RTL8139 -> ARP -> IPv4 -> TCP -> HTTP network smoke test
+          - ISO -> blank disk install -> reboot from installed disk smoke test
+          - RTL8139 -> ARP -> IPv4 -> TCP -> HTTP network smoke test
+
+          Local 86Box validation additionally exercised the i686 path on a late legacy-PC profile with ATA/IDE, NE2000, PS/2, VGA and SB16-class hardware. External 86Box ROMs and emulator binaries are not redistributed by this release.
 
           Current limitations:
-          - the ISO is an install/live-media foundation; the target-disk installer is still under development
+          - the i686 target is currently a compatibility/bootstrap target, not the full framebuffer desktop
           - IPv4 configuration is static
           - TLS/HTTPS is not implemented yet
           - Aster does not yet implement CSS, JavaScript, images or a full HTML5 tree builder
