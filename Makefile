@@ -1,6 +1,7 @@
 PROJECT := UN_Orion
 BUILD := build
 ESP := $(BUILD)/esp
+LEGACY := $(BUILD)/legacy-i686
 
 CC := clang
 LD := ld.lld
@@ -17,7 +18,7 @@ EFILIBDIR := /usr/lib
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
-.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke
+.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke legacy-i686 legacy-smoke
 all: image
 kernel: $(BUILD)/kernel.elf
 
@@ -54,6 +55,45 @@ image: $(BUILD)/kernel.elf $(BUILD)/BOOTX64.EFI tools/mkfat.py tools/image_manif
 iso: image tools/mkiso.py tools/image_manifest.py
 	python3 tools/mkiso.py $(BUILD)/orion.img $(BUILD)/UN_Orion-v0.0.5-install.iso
 	python3 tools/image_manifest.py --input $(BUILD)/UN_Orion-v0.0.5-install.iso --output $(BUILD)/orion-install.json --media installer-iso --arch x86_64
+
+$(LEGACY):
+	mkdir -p $(LEGACY)
+
+$(LEGACY)/boot.o: compat/i686-bios/boot.S | $(LEGACY)
+	$(CC) -target i386-unknown-none -ffreestanding -c $< -o $@
+
+$(LEGACY)/boot.bin: $(LEGACY)/boot.o
+	$(LD) -m elf_i386 -Ttext 0x7c00 --oformat binary $< -o $@
+
+$(LEGACY)/stage2.o: compat/i686-bios/stage2.S | $(LEGACY)
+	$(CC) -target i386-unknown-none -ffreestanding -c $< -o $@
+
+$(LEGACY)/stage2.elf: $(LEGACY)/stage2.o compat/i686-bios/link.ld
+	$(LD) -m elf_i386 -T compat/i686-bios/link.ld $< -o $@
+
+$(LEGACY)/stage2.bin: $(LEGACY)/stage2.elf
+	llvm-objcopy -O binary $< $@
+
+$(LEGACY)/stage2-smoke.o: compat/i686-bios/stage2.S | $(LEGACY)
+	$(CC) -target i386-unknown-none -ffreestanding -DORION_LEGACY_SMOKE=1 -c $< -o $@
+
+$(LEGACY)/stage2-smoke.elf: $(LEGACY)/stage2-smoke.o compat/i686-bios/link.ld
+	$(LD) -m elf_i386 -T compat/i686-bios/link.ld $< -o $@
+
+$(LEGACY)/stage2-smoke.bin: $(LEGACY)/stage2-smoke.elf
+	llvm-objcopy -O binary $< $@
+
+legacy-i686: $(BUILD)/UN_Orion-i686-bios.img
+
+$(BUILD)/UN_Orion-i686-bios.img: $(LEGACY)/boot.bin $(LEGACY)/stage2.bin tools/mklegacy.py tools/image_manifest.py
+	python3 tools/mklegacy.py $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $@
+	python3 tools/image_manifest.py --input $@ --output $(BUILD)/orion-i686-bios.json --media disk-image --arch i686
+
+$(BUILD)/UN_Orion-i686-bios-smoke.img: $(LEGACY)/boot.bin $(LEGACY)/stage2-smoke.bin tools/mklegacy.py
+	python3 tools/mklegacy.py $(LEGACY)/boot.bin $(LEGACY)/stage2-smoke.bin $@
+
+legacy-smoke: $(BUILD)/UN_Orion-i686-bios-smoke.img scripts/legacy_smoke.py
+	python3 scripts/legacy_smoke.py
 
 $(BUILD)/OVMF_VARS.fd: | $(BUILD)
 	cp $(OVMF_VARS) $@

@@ -27,6 +27,44 @@ def main():
     src=Path(args.input)
     if not src.is_file(): raise SystemExit(f'missing media: {src}')
     a=ARCHES[args.arch]
+
+    if args.arch == 'i686':
+        boot={
+            'firmware':'bios',
+            'firmware_id':1,
+            'secure_boot_required':False,
+            'kernel_format':'flat32-bootstrap',
+            'bootinfo_abi':None,
+        }
+        minimum={
+            'ram_mib':4,
+            'framebuffer':['vga-text'],
+            'input':['at-keyboard-optional','ps2-optional'],
+            'network':[],
+        }
+        caps=['legacy-bios','protected-mode','cpuid','vga-text','odi-abi-1.1-bootstrap','bootable-disk']
+        future=['aarch64','riscv64']
+    else:
+        boot={
+            'firmware':'uefi',
+            'firmware_id':2,
+            'uefi_machine':'x64',
+            'secure_boot_required':False,
+            'kernel_format':'elf64',
+            'bootinfo_abi':{'major':1,'minor':0},
+        }
+        minimum={
+            'ram_mib':256,
+            'framebuffer':['uefi-gop-rgb','uefi-gop-bgr'],
+            'input':['ps2-keyboard','ps2-mouse-optional'],
+            'network':['rtl8139-optional'],
+        }
+        caps=[
+            'desktop','installer' if args.media=='installer-iso' else 'bootable-disk',
+            'orx-reserved','odi-reserved','network-ipv4','http-client','un-vela','aster-engine'
+        ]
+        future=['aarch64','riscv64']
+
     manifest={
         'schema':'org.un.orion.image-manifest',
         'schema_version':1,
@@ -35,27 +73,12 @@ def main():
         'media_type':args.media,
         'file':{'name':src.name,'size':src.stat().st_size,'sha256':sha256(src)},
         'architecture':{'name':args.arch,'id':a['id'],'bits':a['bits'],'endianness':a['endian']},
-        'boot':{
-            'firmware':'uefi',
-            'firmware_id':2,
-            'uefi_machine':'x64',
-            'secure_boot_required':False,
-            'kernel_format':'elf64',
-            'bootinfo_abi':{'major':1,'minor':0},
-        },
-        'minimum_contract':{
-            'ram_mib':256,
-            'framebuffer':['uefi-gop-rgb','uefi-gop-bgr'],
-            'input':['ps2-keyboard','ps2-mouse-optional'],
-            'network':['rtl8139-optional'],
-        },
-        'capabilities':[
-            'desktop','installer' if args.media=='installer-iso' else 'bootable-disk',
-            'orx-reserved','odi-reserved','network-ipv4','http-client','un-vela','aster-engine'
-        ],
+        'boot':boot,
+        'minimum_contract':minimum,
+        'capabilities':caps,
         'compatibility':{
             'policy':'Consumers must match schema major, architecture, firmware and required device contract before boot.',
-            'future_architectures':['i686','aarch64','riscv64'],
+            'future_architectures':future,
         },
     }
     Path(args.output).write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n',encoding='utf-8')

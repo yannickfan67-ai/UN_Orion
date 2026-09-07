@@ -13,14 +13,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
-      - name: Build boot image and install ISO
+      - name: Build boot media
         run: |
           make all
           make iso
+          make legacy-i686
           python3 -m json.tool build/orion-image.json >/dev/null
           python3 -m json.tool build/orion-install.json >/dev/null
-      - name: QEMU boot smoke test
+          python3 -m json.tool build/orion-i686-bios.json >/dev/null
+      - name: QEMU x86_64 UEFI boot smoke test
         run: make smoke
+      - name: QEMU i686 Legacy BIOS smoke test
+        run: make legacy-smoke
       - name: QEMU UEFI install ISO smoke test
         run: make iso-smoke
       - name: QEMU end-to-end disk installation test
@@ -37,11 +41,13 @@ jobs:
       - name: Upload boot media
         uses: actions/upload-artifact@v4
         with:
-          name: UN_Orion-v0.0.5-network-browser-install-media
+          name: UN_Orion-v0.0.5-multi-firmware-media
           path: |
             build/orion.img
             build/orion-image.json
             build/UN_Orion-v0.0.5-install.iso
             build/orion-install.json
+            build/UN_Orion-i686-bios.img
+            build/orion-i686-bios.json
             build/OVMF_CODE.localtest.fd
             build/OVMF_VARS.localtest.fd
