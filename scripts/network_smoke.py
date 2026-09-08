@@ -34,7 +34,13 @@ def hmp(sock,cmd):
     s.close()
 
 site=ROOT/'testsite'; site.mkdir(exist_ok=True)
-(site/'index.html').write_text('<html><body><h1>CI Orion HTTP</h1><p>network browser smoke passed</p></body></html>',encoding='utf-8')
+(site/'index.html').write_text(
+    '<!doctype html><html><head><title>CI Orion HTTP</title><style>.hidden{display:none}</style></head>'
+    '<body><header><h1>CI Orion HTTP</h1></header><main><section><h2>Transport</h2>'
+    '<p>network browser smoke &amp; markup preservation passed</p><h3>Semantic HTML</h3>'
+    '<blockquote>Aster receives markup, not flattened text.</blockquote>'
+    '<script>var should_not_render = "<fake>";</script></section></main><footer>UN_Vela</footer></body></html>',
+    encoding='utf-8')
 srv=serve(site)
 with tempfile.TemporaryDirectory(prefix='orion-net-') as td:
     td=pathlib.Path(td); vars_fd=td/'vars.fd'; shutil.copyfile(vars_template,vars_fd); serial=td/'serial.log'; mon=td/'mon.sock'
@@ -52,12 +58,12 @@ with tempfile.TemporaryDirectory(prefix='orion-net-') as td:
         deadline=time.time()+12
         while time.time()<deadline:
             text=serial.read_text(errors='ignore') if serial.exists() else ''
-            if 'HTTP test success' in text:
-                print('UN_Orion network smoke passed: RTL8139 -> ARP -> IPv4 -> TCP -> HTTP')
+            if 'HTTP test failed' in text: raise RuntimeError(text[-1600:])
+            if 'HTTP test success' in text and 'VELA: title CI Orion HTTP' in text and 'HTTP: markup response received' in text:
+                print('UN_Orion network/browser smoke passed: RTL8139 -> TCP -> HTTP markup -> UN_Vela -> Aster title parse')
                 sys.exit(0)
-            if 'HTTP test failed' in text: raise RuntimeError(text[-1200:])
             time.sleep(.1)
-        raise RuntimeError('HTTP smoke timeout: '+(serial.read_text(errors='ignore')[-1200:] if serial.exists() else ''))
+        raise RuntimeError('HTTP/browser smoke timeout: '+(serial.read_text(errors='ignore')[-1600:] if serial.exists() else ''))
     finally:
         qemu.terminate()
         try:qemu.wait(timeout=2)
