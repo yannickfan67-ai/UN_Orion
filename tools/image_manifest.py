@@ -22,7 +22,7 @@ def main():
     p.add_argument('--output',required=True)
     p.add_argument('--media',choices=['disk-image','installer-iso'],required=True)
     p.add_argument('--arch',choices=ARCHES,default='x86_64')
-    p.add_argument('--version',default='0.0.5')
+    p.add_argument('--version',default='0.0.7')
     args=p.parse_args()
     src=Path(args.input)
     if not src.is_file(): raise SystemExit(f'missing media: {src}')
@@ -33,16 +33,20 @@ def main():
             'firmware':'bios',
             'firmware_id':1,
             'secure_boot_required':False,
-            'kernel_format':'flat32-bootstrap',
-            'bootinfo_abi':None,
+            'kernel_format':'flat32',
+            'kernel_load_address':'0x00100000',
+            'bootinfo_abi':{'major':1,'minor':0},
         }
         minimum={
-            'ram_mib':4,
-            'framebuffer':['vga-text'],
-            'input':['at-keyboard-optional','ps2-optional'],
-            'network':[],
+            'ram_mib':64,
+            'framebuffer':['vbe-lfb-32bpp'],
+            'input':['ps2-keyboard','ps2-mouse-optional'],
+            'network':['rtl8139-optional','pcnet-optional','e1000-optional','virtio-net-optional'],
         }
-        caps=['legacy-bios','protected-mode','cpuid','vga-text','odi-abi-1.1-bootstrap','bootable-disk']
+        caps=[
+            'legacy-bios','protected-mode','cpuid','vbe-lfb','desktop','pmm','ps2-input',
+            'netdev-abi','network-ipv4','http-client','un-vela','aster-engine','bootable-disk'
+        ]
         future=['aarch64','riscv64']
     else:
         boot={
@@ -57,11 +61,11 @@ def main():
             'ram_mib':256,
             'framebuffer':['uefi-gop-rgb','uefi-gop-bgr'],
             'input':['ps2-keyboard','ps2-mouse-optional'],
-            'network':['rtl8139-optional'],
+            'network':['rtl8139-optional','pcnet-optional','e1000-optional','virtio-net-optional'],
         }
         caps=[
             'desktop','installer' if args.media=='installer-iso' else 'bootable-disk',
-            'orx-reserved','odi-reserved','network-ipv4','http-client','un-vela','aster-engine'
+            'orx-reserved','odi-reserved','netdev-abi','network-ipv4','http-client','un-vela','aster-engine'
         ]
         future=['aarch64','riscv64']
 
