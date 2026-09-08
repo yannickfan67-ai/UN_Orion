@@ -8,7 +8,7 @@
 
 static int is_space(char c){return c==' '||c=='\t'||c=='\r'||c=='\n';}
 static char lower(char c){return c>='A'&&c<='Z'?(char)(c+32):c;}
-static int starts_ci(const char *s,const char *p){while(*p){if(lower(*s++)!=lower(*p++))return 0;}return 1;}
+static int starts_ci(const char *s,const char *p){while(*p){if(!*s||lower(*s++)!=lower(*p++))return 0;}return 1;}
 static int name_eq(const char *s,size_t n,const char *lit){size_t i=0;while(lit[i]&&i<n){if(lower(s[i])!=lower(lit[i]))return 0;i++;}return i==n&&lit[i]==0;}
 
 static uint16_t store_bytes(AsterDocument *d,const char *s,size_t n){
@@ -30,14 +30,19 @@ static int add_node(AsterDocument*d,int parent,uint8_t type,uint8_t tag,uint16_t
 }
 static uint8_t tag_id(const char*s,size_t n){
     if(name_eq(s,n,"html"))return ASTER_TAG_HTML;if(name_eq(s,n,"head"))return ASTER_TAG_HEAD;if(name_eq(s,n,"body"))return ASTER_TAG_BODY;
-    if(name_eq(s,n,"title"))return ASTER_TAG_TITLE;if(name_eq(s,n,"h1"))return ASTER_TAG_H1;if(name_eq(s,n,"h2"))return ASTER_TAG_H2;
-    if(name_eq(s,n,"p"))return ASTER_TAG_P;if(name_eq(s,n,"div"))return ASTER_TAG_DIV;if(name_eq(s,n,"br"))return ASTER_TAG_BR;
+    if(name_eq(s,n,"title"))return ASTER_TAG_TITLE;if(name_eq(s,n,"h1"))return ASTER_TAG_H1;if(name_eq(s,n,"h2"))return ASTER_TAG_H2;if(name_eq(s,n,"h3"))return ASTER_TAG_H3;
+    if(name_eq(s,n,"p"))return ASTER_TAG_P;if(name_eq(s,n,"div"))return ASTER_TAG_DIV;if(name_eq(s,n,"br"))return ASTER_TAG_BR;if(name_eq(s,n,"hr"))return ASTER_TAG_HR;
     if(name_eq(s,n,"a"))return ASTER_TAG_A;if(name_eq(s,n,"ul"))return ASTER_TAG_UL;if(name_eq(s,n,"ol"))return ASTER_TAG_OL;if(name_eq(s,n,"li"))return ASTER_TAG_LI;
-    if(name_eq(s,n,"strong")||name_eq(s,n,"b"))return ASTER_TAG_STRONG;if(name_eq(s,n,"em")||name_eq(s,n,"i"))return ASTER_TAG_EM;if(name_eq(s,n,"code"))return ASTER_TAG_CODE;
+    if(name_eq(s,n,"strong")||name_eq(s,n,"b"))return ASTER_TAG_STRONG;if(name_eq(s,n,"em")||name_eq(s,n,"i"))return ASTER_TAG_EM;if(name_eq(s,n,"code"))return ASTER_TAG_CODE;if(name_eq(s,n,"span"))return ASTER_TAG_SPAN;
+    if(name_eq(s,n,"header"))return ASTER_TAG_HEADER;if(name_eq(s,n,"footer"))return ASTER_TAG_FOOTER;if(name_eq(s,n,"main"))return ASTER_TAG_MAIN;if(name_eq(s,n,"nav"))return ASTER_TAG_NAV;
+    if(name_eq(s,n,"section"))return ASTER_TAG_SECTION;if(name_eq(s,n,"article"))return ASTER_TAG_ARTICLE;if(name_eq(s,n,"blockquote"))return ASTER_TAG_BLOCKQUOTE;
+    if(name_eq(s,n,"script"))return ASTER_TAG_SCRIPT;if(name_eq(s,n,"style"))return ASTER_TAG_STYLE;
     return ASTER_TAG_UNKNOWN;
 }
-static int is_void(uint8_t tag){return tag==ASTER_TAG_BR;}
-static int is_block(uint8_t tag){return tag==ASTER_TAG_BODY||tag==ASTER_TAG_H1||tag==ASTER_TAG_H2||tag==ASTER_TAG_P||tag==ASTER_TAG_DIV||tag==ASTER_TAG_UL||tag==ASTER_TAG_OL||tag==ASTER_TAG_LI;}
+static int is_void(uint8_t tag){return tag==ASTER_TAG_BR||tag==ASTER_TAG_HR;}
+static int is_block(uint8_t tag){
+    return tag==ASTER_TAG_BODY||tag==ASTER_TAG_H1||tag==ASTER_TAG_H2||tag==ASTER_TAG_H3||tag==ASTER_TAG_P||tag==ASTER_TAG_DIV||tag==ASTER_TAG_UL||tag==ASTER_TAG_OL||tag==ASTER_TAG_LI||tag==ASTER_TAG_HEADER||tag==ASTER_TAG_FOOTER||tag==ASTER_TAG_MAIN||tag==ASTER_TAG_NAV||tag==ASTER_TAG_SECTION||tag==ASTER_TAG_ARTICLE||tag==ASTER_TAG_BLOCKQUOTE||tag==ASTER_TAG_HR;
+}
 
 void aster_document_init(AsterDocument*d){
     if(!d)return;d->node_count=0;d->paint_count=0;d->text_used=0;d->document_height=0;d->title[0]=0;
@@ -50,6 +55,7 @@ static size_t decode_text(char*out,size_t cap,const char*s,size_t n){
         if(c=='&'){
             if(i+3<n&&starts_ci(s+i,"&lt;")){c='<';i+=3;}else if(i+3<n&&starts_ci(s+i,"&gt;")){c='>';i+=3;}
             else if(i+4<n&&starts_ci(s+i,"&amp;")){c='&';i+=4;}else if(i+5<n&&starts_ci(s+i,"&nbsp;")){c=' ';i+=5;}
+            else if(i+5<n&&starts_ci(s+i,"&quot;")){c='"';i+=5;}else if(i+5<n&&starts_ci(s+i,"&apos;")){c='\'';i+=5;}
         }
         if(is_space(c)){pending_space=1;continue;}
         if(pending_space&&o&&o+1<cap)out[o++]=' ';
@@ -60,8 +66,14 @@ static size_t decode_text(char*out,size_t cap,const char*s,size_t n){
 static void parse_href(AsterDocument*d,AsterNode*n,const char *s,size_t len){
     size_t i=0;while(i<len){while(i<len&&is_space(s[i]))i++;size_t ns=i;while(i<len&&!is_space(s[i])&&s[i]!='=')i++;size_t nn=i-ns;while(i<len&&is_space(s[i]))i++;if(i>=len||s[i]!='='){while(i<len&&!is_space(s[i]))i++;continue;}i++;while(i<len&&is_space(s[i]))i++;char q=0;if(i<len&&(s[i]=='\''||s[i]=='\"'))q=s[i++];size_t vs=i;if(q){while(i<len&&s[i]!=q)i++;}else while(i<len&&!is_space(s[i])&&s[i]!='>')i++;size_t vn=i-vs;if(q&&i<len)i++;if(name_eq(s+ns,nn,"href")&&vn){n->href_off=store_bytes(d,s+vs,vn);n->href_len=(uint16_t)vn;return;}}
 }
+static const char *skip_raw_element(const char *p,uint8_t tag){
+    const char *end=tag==ASTER_TAG_SCRIPT?"</script":"</style";
+    while(*p&&!starts_ci(p,end))p++;
+    if(*p){while(*p&&*p!='>')p++;if(*p)p++;}
+    return p;
+}
 int aster_parse_html(AsterDocument*d,const char*html){
-    if(!d||!html)return 0;aster_document_init(d);int stack[32],sp=1;stack[0]=0;const char*p=html;
+    if(!d||!html)return 0;aster_document_init(d);int stack[40],sp=1;stack[0]=0;const char*p=html;
     while(*p&&d->node_count<ASTER_MAX_NODES){
         if(*p!='<'){
             const char*st=p;while(*p&&*p!='<')p++;char tmp[768];size_t n=decode_text(tmp,sizeof(tmp),st,(size_t)(p-st));if(n){uint16_t off=store_bytes(d,tmp,n);int idx=add_node(d,stack[sp-1],ASTER_NODE_TEXT,ASTER_TAG_UNKNOWN,off,(uint16_t)n);if(idx>=0&&d->nodes[stack[sp-1]].tag==ASTER_TAG_TITLE&&d->title[0]==0){size_t m=n<sizeof(d->title)-1?n:sizeof(d->title)-1;for(size_t k=0;k<m;k++)d->title[k]=tmp[k];d->title[m]=0;}}continue;
@@ -72,6 +84,7 @@ int aster_parse_html(AsterDocument*d,const char*html){
         if(closing){while(*p&&*p!='>')p++;if(*p)p++;for(int i=sp-1;i>0;i--)if(d->nodes[stack[i]].tag==tag){sp=i;break;}continue;}
         const char*attrs=p;while(*p&&*p!='>')p++;size_t an=(size_t)(p-attrs);int self_close=an&&attrs[an-1]=='/';if(*p)p++;
         int idx=add_node(d,stack[sp-1],ASTER_NODE_ELEMENT,tag,0,0);if(idx<0)break;if(tag==ASTER_TAG_A)parse_href(d,&d->nodes[idx],attrs,an);
+        if(tag==ASTER_TAG_SCRIPT||tag==ASTER_TAG_STYLE){p=skip_raw_element(p,tag);continue;}
         if(!self_close&&!is_void(tag)&&sp<(int)(sizeof(stack)/sizeof(stack[0])))stack[sp++]=idx;
     }
     if(!d->title[0]){const char*fallback="Untitled page";size_t i=0;while(fallback[i]&&i+1<sizeof(d->title)){d->title[i]=fallback[i];i++;}d->title[i]=0;}
@@ -80,7 +93,7 @@ int aster_parse_html(AsterDocument*d,const char*html){
 
 static uint8_t inherited_tag(const AsterDocument*d,int node,uint8_t wanted){for(int n=node;n>=0;n=d->nodes[n].parent)if(d->nodes[n].tag==wanted)return 1;return 0;}
 static const AsterNode *link_ancestor(const AsterDocument*d,int node){for(int n=node;n>=0;n=d->nodes[n].parent)if(d->nodes[n].tag==ASTER_TAG_A&&d->nodes[n].href_len)return &d->nodes[n];return 0;}
-static int hidden_node(const AsterDocument*d,int node){return inherited_tag(d,node,ASTER_TAG_HEAD)||inherited_tag(d,node,ASTER_TAG_TITLE);}
+static int hidden_node(const AsterDocument*d,int node){return inherited_tag(d,node,ASTER_TAG_HEAD)||inherited_tag(d,node,ASTER_TAG_TITLE)||inherited_tag(d,node,ASTER_TAG_SCRIPT)||inherited_tag(d,node,ASTER_TAG_STYLE);}
 static void emit_item(AsterDocument*d,int x,int y,int w,int h,uint8_t scale,uint8_t flags,uint32_t color,uint16_t off,uint16_t len,const AsterNode*link){
     if(d->paint_count>=ASTER_MAX_PAINT||!len)return;AsterPaintItem*i=&d->paint[d->paint_count++];i->x=(int16_t)x;i->y=(int16_t)y;i->w=(int16_t)w;i->h=(int16_t)h;i->scale=scale;i->flags=flags;i->color=color;i->text_off=off;i->text_len=len;i->href_off=link?link->href_off:0;i->href_len=link?link->href_len:0;
 }
@@ -96,17 +109,23 @@ static void layout_text_node(AsterDocument*d,int node,int *cx,int *cy,int left,i
 }
 static void layout_walk(AsterDocument*d,int node,int *cx,int *cy,int left,int width){
     if(node<0||hidden_node(d,node))return;AsterNode*n=&d->nodes[node];uint8_t tag=n->tag;int block=is_block(tag);uint8_t scale=1,flags=0;uint32_t color=0x26394B;
-    if(tag==ASTER_TAG_H1){scale=2;color=0x1D3550;}else if(tag==ASTER_TAG_H2){flags|=ASTER_FLAG_BOLD;color=0x244E73;}if(inherited_tag(d,node,ASTER_TAG_STRONG))flags|=ASTER_FLAG_BOLD;if(inherited_tag(d,node,ASTER_TAG_CODE))color=0x7B3F57;
-    if(block&&*cx!=left){*cx=left;*cy+=24;}if(tag==ASTER_TAG_H1||tag==ASTER_TAG_H2||tag==ASTER_TAG_P||tag==ASTER_TAG_DIV||tag==ASTER_TAG_LI)*cy+=8;if(tag==ASTER_TAG_LI){/* reserve visual indent */*cx=left+22;}
-    if(n->type==ASTER_NODE_TEXT)layout_text_node(d,node,cx,cy,left+(inherited_tag(d,node,ASTER_TAG_LI)?22:0),width-(inherited_tag(d,node,ASTER_TAG_LI)?22:0),scale,color,flags);
-    if(tag==ASTER_TAG_BR){*cx=left;*cy+=24;}
-    for(int c=n->first_child;c>=0;c=d->nodes[c].next_sibling)layout_walk(d,c,cx,cy,left,width);
-    if(block&&n->type==ASTER_NODE_ELEMENT){*cx=left;*cy+=tag==ASTER_TAG_H1?20:tag==ASTER_TAG_H2?12:8;}
+    if(inherited_tag(d,node,ASTER_TAG_H1)){scale=2;color=0x1D3550;flags|=ASTER_FLAG_BOLD;}else if(inherited_tag(d,node,ASTER_TAG_H2)){flags|=ASTER_FLAG_BOLD;color=0x244E73;}else if(inherited_tag(d,node,ASTER_TAG_H3)){flags|=ASTER_FLAG_BOLD;color=0x315E80;}
+    if(inherited_tag(d,node,ASTER_TAG_STRONG))flags|=ASTER_FLAG_BOLD;if(inherited_tag(d,node,ASTER_TAG_CODE))color=0x7B3F57;
+    if(block&&*cx!=left){*cx=left;*cy+=24;}if(tag==ASTER_TAG_H1||tag==ASTER_TAG_H2||tag==ASTER_TAG_H3||tag==ASTER_TAG_P||tag==ASTER_TAG_DIV||tag==ASTER_TAG_LI||tag==ASTER_TAG_SECTION||tag==ASTER_TAG_ARTICLE||tag==ASTER_TAG_BLOCKQUOTE)*cy+=8;
+    int child_left=left,child_width=width;if(tag==ASTER_TAG_LI){child_left=left+22;child_width=width>22?width-22:width;*cx=child_left;}else if(tag==ASTER_TAG_BLOCKQUOTE){child_left=left+28;child_width=width>56?width-56:width;*cx=child_left;}
+    if(n->type==ASTER_NODE_TEXT)layout_text_node(d,node,cx,cy,left,width,scale,color,flags);
+    if(tag==ASTER_TAG_BR){*cx=left;*cy+=24;}if(tag==ASTER_TAG_HR){*cx=left;*cy+=12;}
+    for(int c=n->first_child;c>=0;c=d->nodes[c].next_sibling)layout_walk(d,c,cx,cy,child_left,child_width);
+    if(block&&n->type==ASTER_NODE_ELEMENT){*cx=left;*cy+=tag==ASTER_TAG_H1?20:tag==ASTER_TAG_H2?14:tag==ASTER_TAG_H3?10:8;}
 }
 void aster_layout(AsterDocument*d,int viewport_width){
     if(!d)return;if(viewport_width<120)viewport_width=120;d->paint_count=0;int x=0,y=0;layout_walk(d,0,&x,&y,0,viewport_width);d->document_height=y+32;
 }
 void aster_paint(const AsterDocument*d,int x,int y,int width,int height,int scroll_y){
-    if(!d)return;for(unsigned k=0;k<d->paint_count;k++){const AsterPaintItem*i=&d->paint[k];int py=y+i->y-scroll_y;if(py+i->h<y||py>y+height)continue;if(i->x>=width)continue;char tmp[160];size_t n=i->text_len<sizeof(tmp)-1?i->text_len:sizeof(tmp)-1;for(size_t j=0;j<n;j++)tmp[j]=d->text[i->text_off+j];tmp[n]=0;uint32_t drawn;if(i->scale==2)drawn=gfx_display_text((uint32_t)(x+i->x),(uint32_t)py,tmp,i->color);else drawn=gfx_text((uint32_t)(x+i->x),(uint32_t)py,tmp,i->color,1);if(i->flags&ASTER_FLAG_LINK)gfx_line_h((uint32_t)(x+i->x),(uint32_t)(py+i->h-4),drawn,0x6BA5D8);}
+    if(!d)return;for(unsigned k=0;k<d->paint_count;k++){const AsterPaintItem*i=&d->paint[k];int py=y+i->y-scroll_y;if(py+i->h<y||py>y+height)continue;if(i->x>=width||i->x+i->w<0)continue;char tmp[160];size_t n=i->text_len<sizeof(tmp)-1?i->text_len:sizeof(tmp)-1;for(size_t j=0;j<n;j++)tmp[j]=d->text[i->text_off+j];tmp[n]=0;uint32_t drawn;if(i->scale==2)drawn=gfx_display_text((uint32_t)(x+i->x),(uint32_t)py,tmp,i->color);else drawn=gfx_text((uint32_t)(x+i->x),(uint32_t)py,tmp,i->color,1);if(i->flags&ASTER_FLAG_LINK)gfx_line_h((uint32_t)(x+i->x),(uint32_t)(py+i->h-4),drawn,0x6BA5D8);}
+}
+int aster_document_height(const AsterDocument*d){return d?d->document_height:0;}
+int aster_link_at(const AsterDocument*d,int x,int y,char*href,size_t cap){
+    if(!d||!href||cap<2)return 0;href[0]=0;for(int k=(int)d->paint_count-1;k>=0;k--){const AsterPaintItem*i=&d->paint[k];if(!(i->flags&ASTER_FLAG_LINK)||!i->href_len)continue;if(x<i->x||y<i->y||x>=i->x+i->w||y>=i->y+i->h)continue;size_t n=i->href_len<cap-1?i->href_len:cap-1;for(size_t j=0;j<n;j++)href[j]=d->text[i->href_off+j];href[n]=0;return 1;}return 0;
 }
 const char *aster_version(void){return ASTER_VERSION;}
