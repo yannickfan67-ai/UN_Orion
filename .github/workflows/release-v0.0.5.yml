@@ -27,19 +27,7 @@ jobs:
           test -f release/UN_Orion-v0.0.5-install.iso
           test -f release/SHA256SUMS.txt
 
-      - name: Create verified v0.0.5 tag through GitHub API
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v0.0.5" >/dev/null 2>&1; then
-            echo 'v0.0.5 tag already exists.'
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref='refs/tags/v0.0.5' \
-              -f sha='83e6cf94e3eaf4c5894b60465a24b102db151614'
-          fi
-
-      - name: Create GitHub Release
+      - name: Create v0.0.5 Release and target tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -58,7 +46,7 @@ jobs:
             UN_Orion-v0.0.5-source.zip \
             SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
+            --target '83e6cf94e3eaf4c5894b60465a24b102db151614' \
             --title 'UN_Orion v0.0.5 Multi-Firmware & Vela Preview' \
             --notes-file - <<'EOF'
           UN_Orion v0.0.5 expands the desktop preview into a network-capable, multi-firmware development release.
