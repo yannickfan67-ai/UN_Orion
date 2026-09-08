@@ -27,7 +27,8 @@ jobs:
           test -f release/UN_Orion-v0.0.5-install.iso
           test -f release/SHA256SUMS.txt
 
-      - name: Create v0.0.5 Release and target tag
+      - name: Try formal v0.0.5 GitHub Release
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -48,31 +49,38 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target '83e6cf94e3eaf4c5894b60465a24b102db151614' \
             --title 'UN_Orion v0.0.5 Multi-Firmware & Vela Preview' \
-            --notes-file - <<'EOF'
-          UN_Orion v0.0.5 expands the desktop preview into a network-capable, multi-firmware development release.
+            --notes 'UN_Orion v0.0.5: x86_64 UEFI desktop/install media, experimental i686 Legacy BIOS target, RTL8139 networking, UN_Vela 0.1, Aster Engine 0.1, Image ABI manifests and 86Box compatibility profile.'
 
-          Highlights:
-          - x86_64 UEFI kernel, framebuffer desktop and bootable installer ISO
-          - experimental i686 Legacy BIOS protected-mode compatibility target
-          - RTL8139 networking: Ethernet II, ARP, IPv4, ICMP, UDP, DNS and minimal TCP
-          - HTTP/1.0 client, UN_Vela 0.1 and Aster Engine 0.1
-          - Orion Browser retained as the lightweight/recovery browser line
-          - Orion Image ABI manifests for both firmware/architecture targets
-          - documented 86Box CAIRO-5 / VIA-Centaur Samuel 600 MHz compatibility profile
+      - name: Upload verified bundle to release-v0.0.5 branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: release-v0.0.5
+          TARGET_PATH: releases/v0.0.5/UN_Orion-v0.0.5-multi-firmware-release.zip
+        run: |
+          cd release
+          zip -9 -j /tmp/UN_Orion-v0.0.5-multi-firmware-release.zip ./*
+          sha256sum /tmp/UN_Orion-v0.0.5-multi-firmware-release.zip | tee /tmp/BUNDLE-SHA256.txt
+          B64=$(base64 -w0 /tmp/UN_Orion-v0.0.5-multi-firmware-release.zip)
+          OLD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/contents/$TARGET_PATH?ref=$TARGET_BRANCH" --jq .sha 2>/dev/null || true)
+          if [ -n "$OLD_SHA" ]; then
+            jq -n --arg message 'Upload verified UN_Orion v0.0.5 release bundle' \
+              --arg content "$B64" --arg branch "$TARGET_BRANCH" --arg sha "$OLD_SHA" \
+              '{message:$message,content:$content,branch:$branch,sha:$sha}' >/tmp/upload.json
+          else
+            jq -n --arg message 'Upload verified UN_Orion v0.0.5 release bundle' \
+              --arg content "$B64" --arg branch "$TARGET_BRANCH" \
+              '{message:$message,content:$content,branch:$branch}' >/tmp/upload.json
+          fi
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$TARGET_PATH" --input /tmp/upload.json >/tmp/upload-result.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/$TARGET_PATH?ref=$TARGET_BRANCH" --jq '.name + " uploaded, blob=" + .sha'
 
-          Verified before release:
-          - x86_64 UEFI raw-image boot
-          - i686 Legacy BIOS boot
-          - UEFI El Torito ISO boot
-          - ISO -> blank disk install -> disk-only reboot
-          - RTL8139 -> ARP -> IPv4 -> TCP -> HTTP
-
-          Local 86Box validation additionally exercised ATA/IDE, NE2000, PS/2, VGA and SB16-class hardware. External 86Box ROMs and emulator binaries are not redistributed.
-
-          Current limitations:
-          - i686 is currently a compatibility/bootstrap target, not the full framebuffer desktop
-          - IPv4 configuration is static
-          - TLS/HTTPS is not implemented yet
-          - Aster does not yet implement CSS, JavaScript, images or a full HTML5 tree builder
-          - Files/Notes persistence and on-disk ORX loading are still in progress
-          EOF
+      - name: Verify v0.0.5 is downloadable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.0.5 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Formal GitHub Release v0.0.5 is available.'
+          else
+            gh api "repos/$GITHUB_REPOSITORY/contents/releases/v0.0.5/UN_Orion-v0.0.5-multi-firmware-release.zip?ref=release-v0.0.5" --jq '.download_url'
+            echo 'Verified v0.0.5 bundle is available from release-v0.0.5 branch.'
+          fi
