@@ -1,0 +1,66 @@
+name: publish-v0.0.7
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-v0.0.7.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download verified build #77 media
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release
+          gh run download 34279976647 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name UN_Orion-v0.0.7-multi-firmware-media \
+            --dir release
+
+      - name: Prepare v0.0.7 assets
+        run: |
+          cd release
+          mv orion.img UN_Orion-v0.0.7-x86_64-uefi.img
+          mv orion-image.json orion-image-x86_64.json
+          mv orion-i686-bios.json orion-image-i686.json
+          mv orion-install.json orion-install-x86_64.json
+          rm -f OVMF_CODE.localtest.fd OVMF_VARS.localtest.fd
+          sha256sum \
+            UN_Orion-v0.0.7-x86_64-uefi.img \
+            UN_Orion-v0.0.7-i686-bios.img \
+            UN_Orion-v0.0.7-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            > SHA256SUMS.txt
+
+      - name: Publish v0.0.7
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd release
+          gh release create v0.0.7 \
+            UN_Orion-v0.0.7-x86_64-uefi.img \
+            UN_Orion-v0.0.7-i686-bios.img \
+            UN_Orion-v0.0.7-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 783c189d1cb37ab78fe98281ee883fafd1916114 \
+            --title 'UN_Orion v0.0.7 Full i686 System & Multi-NIC Preview' \
+            --notes 'UN_Orion v0.0.7 replaces the earlier i686 compatibility bootstrap with a real 32-bit Orion system. The Legacy BIOS stage2 now selects a 32-bit VBE linear framebuffer, loads the i686 kernel at 1 MiB, constructs Orion BootInfo ABI 1.0, and boots the shared desktop stack. The i686 build includes PMM, GDT/IDT/PIC/PIT, PS/2 input, Terminal, Files, Notes, Paint, UN_Vela with Aster Engine, the Network app, the common IPv4/HTTP stack, and the generic netdev layer. Both x86_64 UEFI and i686 BIOS full-system smoke tests pass, as do ISO boot, end-to-end disk installation, and RTL8139 HTTP network smoke. Multi-NIC support for PCnet, e1000/e1000e-family and virtio-net remains preview while the full per-model hardware matrix is being completed. The ASUS CUV4X-LS / VIA C3 733 MHz 86Box profile remains included; full graphical 86Box validation of this new i686 build is still in progress.'
+
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.0.7 --repo "$GITHUB_REPOSITORY" --json tagName,name,url,assets
+          test "$(gh api repos/$GITHUB_REPOSITORY/releases/tags/v0.0.7 --jq '.assets | length')" -eq 7
