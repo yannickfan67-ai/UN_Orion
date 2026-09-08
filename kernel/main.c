@@ -6,12 +6,13 @@
 #include "pmm.h"
 #include "desktop.h"
 #include "net.h"
+#include "version.h"
 
 __attribute__((noreturn)) void kernel_main(OrionBootInfo *bi){
     __asm__ volatile("cli");
     serial_init();
     gfx_init(bi);
-    serial_write("UN_Orion kernel 0.0.5 alive\r\n");
+    serial_write(ORION_VERSION_STRING " alive\r\n");
     arch_gdt_init();
     serial_write("GDT ready\r\n");
     pmm_init(bi);
