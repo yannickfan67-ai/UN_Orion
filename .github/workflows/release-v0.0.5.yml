@@ -22,13 +22,19 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name UN_Orion-v0.0.5-multi-firmware-release \
             --dir release
-          test -f release/UN_Orion-v0.0.5-x86_64-uefi.img
-          test -f release/UN_Orion-v0.0.5-i686-bios.img
-          test -f release/UN_Orion-v0.0.5-install.iso
-          test -f release/SHA256SUMS.txt
+          for f in \
+            UN_Orion-v0.0.5-x86_64-uefi.img \
+            UN_Orion-v0.0.5-i686-bios.img \
+            UN_Orion-v0.0.5-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            UN_Orion-v0.0.5-source.zip \
+            SHA256SUMS.txt; do
+            test -f "release/$f"
+          done
 
-      - name: Try formal v0.0.5 GitHub Release
-        continue-on-error: true
+      - name: Ensure formal v0.0.5 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -51,36 +57,21 @@ jobs:
             --title 'UN_Orion v0.0.5 Multi-Firmware & Vela Preview' \
             --notes 'UN_Orion v0.0.5: x86_64 UEFI desktop/install media, experimental i686 Legacy BIOS target, RTL8139 networking, UN_Vela 0.1, Aster Engine 0.1, Image ABI manifests and 86Box compatibility profile.'
 
-      - name: Upload verified bundle to release-v0.0.5 branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_BRANCH: release-v0.0.5
-          TARGET_PATH: releases/v0.0.5/UN_Orion-v0.0.5-multi-firmware-release.zip
-        run: |
-          cd release
-          zip -9 -j /tmp/UN_Orion-v0.0.5-multi-firmware-release.zip ./*
-          sha256sum /tmp/UN_Orion-v0.0.5-multi-firmware-release.zip | tee /tmp/BUNDLE-SHA256.txt
-          B64=$(base64 -w0 /tmp/UN_Orion-v0.0.5-multi-firmware-release.zip)
-          OLD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/contents/$TARGET_PATH?ref=$TARGET_BRANCH" --jq .sha 2>/dev/null || true)
-          if [ -n "$OLD_SHA" ]; then
-            jq -n --arg message 'Upload verified UN_Orion v0.0.5 release bundle' \
-              --arg content "$B64" --arg branch "$TARGET_BRANCH" --arg sha "$OLD_SHA" \
-              '{message:$message,content:$content,branch:$branch,sha:$sha}' >/tmp/upload.json
-          else
-            jq -n --arg message 'Upload verified UN_Orion v0.0.5 release bundle' \
-              --arg content "$B64" --arg branch "$TARGET_BRANCH" \
-              '{message:$message,content:$content,branch:$branch}' >/tmp/upload.json
-          fi
-          gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$TARGET_PATH" --input /tmp/upload.json >/tmp/upload-result.json
-          gh api "repos/$GITHUB_REPOSITORY/contents/$TARGET_PATH?ref=$TARGET_BRANCH" --jq '.name + " uploaded, blob=" + .sha'
-
-      - name: Verify v0.0.5 is downloadable
+      - name: Verify published v0.0.5 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v0.0.5 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'Formal GitHub Release v0.0.5 is available.'
-          else
-            gh api "repos/$GITHUB_REPOSITORY/contents/releases/v0.0.5/UN_Orion-v0.0.5-multi-firmware-release.zip?ref=release-v0.0.5" --jq '.download_url'
-            echo 'Verified v0.0.5 bundle is available from release-v0.0.5 branch.'
-          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.0.5" --jq .target_commitish)" = '83e6cf94e3eaf4c5894b60465a24b102db151614'
+          ASSETS="$(gh release view v0.0.5 --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for f in \
+            UN_Orion-v0.0.5-x86_64-uefi.img \
+            UN_Orion-v0.0.5-i686-bios.img \
+            UN_Orion-v0.0.5-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            UN_Orion-v0.0.5-source.zip \
+            SHA256SUMS.txt; do
+            grep -Fx "$f" <<<"$ASSETS"
+          done
+          echo 'UN_Orion v0.0.5 formal Release verified.'
