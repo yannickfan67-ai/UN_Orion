@@ -23,7 +23,7 @@ jobs:
           python3 -m json.tool build/orion-i686-bios.json >/dev/null
       - name: QEMU x86_64 UEFI boot smoke test
         run: make smoke
-      - name: QEMU i686 Legacy BIOS smoke test
+      - name: QEMU i686 Legacy BIOS full-system smoke test
         run: make legacy-smoke
       - name: QEMU UEFI install ISO smoke test
         run: make iso-smoke
@@ -41,13 +41,13 @@ jobs:
       - name: Upload boot media
         uses: actions/upload-artifact@v4
         with:
-          name: UN_Orion-v0.0.5-multi-firmware-media
+          name: UN_Orion-v0.0.7-multi-firmware-media
           path: |
             build/orion.img
             build/orion-image.json
-            build/UN_Orion-v0.0.5-install.iso
+            build/UN_Orion-v0.0.7-install.iso
             build/orion-install.json
-            build/UN_Orion-i686-bios.img
+            build/UN_Orion-v0.0.7-i686-bios.img
             build/orion-i686-bios.json
             build/OVMF_CODE.localtest.fd
             build/OVMF_VARS.localtest.fd
