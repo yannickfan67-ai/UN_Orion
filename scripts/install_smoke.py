@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import pathlib
+import re
 import shutil
 import socket
 import subprocess
@@ -9,7 +10,20 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
-ISO = BUILD / "UN_Orion-v0.0.5-install.iso"
+VERSION_H = ROOT / "include" / "version.h"
+
+
+def read_version():
+    text = VERSION_H.read_text(encoding='utf-8')
+    match = re.search(r'^#define\s+ORION_VERSION\s+"([^"]+)"', text, re.MULTILINE)
+    if not match:
+        raise SystemExit('ORION_VERSION missing from include/version.h')
+    return match.group(1)
+
+
+VERSION = read_version()
+ISO = BUILD / f"UN_Orion-v{VERSION}-install.iso"
+KERNEL_BANNER = f"UN_Orion {VERSION} alive"
 
 
 def find_ovmf(env_name, names):
@@ -75,7 +89,7 @@ def stop(proc):
 
 
 if not ISO.exists():
-    raise SystemExit('install ISO missing; run make iso first')
+    raise SystemExit(f'install ISO missing: {ISO.name}; run make iso first')
 
 with tempfile.TemporaryDirectory(prefix='orion-install-') as td:
     td = pathlib.Path(td)
@@ -121,9 +135,9 @@ with tempfile.TemporaryDirectory(prefix='orion-install-') as td:
     ]
     proc = subprocess.Popen(disk_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        wait_text(disk_log, 'UN_Orion kernel 0.0.5 alive', 12, proc)
+        wait_text(disk_log, KERNEL_BANNER, 12, proc)
         wait_text(disk_log, 'Orion desktop ready', 5, proc)
     finally:
         stop(proc)
 
-print('UN_Orion installer smoke passed: ISO -> writable disk -> disk-only UEFI boot')
+print(f'UN_Orion {VERSION} installer smoke passed: ISO -> writable disk -> disk-only UEFI boot')
