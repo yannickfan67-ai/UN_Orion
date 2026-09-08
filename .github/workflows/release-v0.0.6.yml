@@ -1,0 +1,80 @@
+name: publish-v0.0.6
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-v0.0.6.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download verified build #61 media
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release
+          gh run download 34235778222 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name UN_Orion-v0.0.5-multi-firmware-media \
+            --dir release
+
+      - name: Normalize v0.0.6 asset names
+        run: |
+          cd release
+          mv orion.img UN_Orion-v0.0.6-x86_64-uefi.img
+          mv UN_Orion-v0.0.5-install.iso UN_Orion-v0.0.6-install.iso
+          mv UN_Orion-i686-bios.img UN_Orion-v0.0.6-i686-bios.img
+          mv orion-image.json orion-image-x86_64.json
+          mv orion-i686-bios.json orion-image-i686.json
+          mv orion-install.json orion-install-x86_64.json
+          rm -f OVMF_CODE.localtest.fd OVMF_VARS.localtest.fd
+          sha256sum \
+            UN_Orion-v0.0.6-x86_64-uefi.img \
+            UN_Orion-v0.0.6-i686-bios.img \
+            UN_Orion-v0.0.6-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            > SHA256SUMS.txt
+
+      - name: Publish v0.0.6
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd release
+          if gh release view v0.0.6 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload v0.0.6 \
+              UN_Orion-v0.0.6-x86_64-uefi.img \
+              UN_Orion-v0.0.6-i686-bios.img \
+              UN_Orion-v0.0.6-install.iso \
+              orion-image-x86_64.json \
+              orion-image-i686.json \
+              orion-install-x86_64.json \
+              SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create v0.0.6 \
+              UN_Orion-v0.0.6-x86_64-uefi.img \
+              UN_Orion-v0.0.6-i686-bios.img \
+              UN_Orion-v0.0.6-install.iso \
+              orion-image-x86_64.json \
+              orion-image-i686.json \
+              orion-install-x86_64.json \
+              SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target 84e980627fe97ee3b87e6a2d16759cb5dd15d78a \
+              --title 'UN_Orion v0.0.6 Multi-NIC & 86Box Preview' \
+              --notes 'UN_Orion v0.0.6 adds the generic PCI/netdev split, RTL8139 regression support, AMD PCnet Am79C970A/Am79C973, Intel PRO/1000 82540EM/82543GC/82545EM plus an 82583V/e1000e-family path, legacy/transitional virtio-net, and the tested ASUS CUV4X-LS + VIA C3 733 MHz 86Box profile. The build is CI-verified. Full per-model end-to-end network validation is still in progress, so multi-NIC support beyond RTL8139 is marked preview.'
+          fi
+
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.0.6 --repo "$GITHUB_REPOSITORY" --json tagName,name,url,assets
+          test "$(gh api repos/$GITHUB_REPOSITORY/releases/tags/v0.0.6 --jq '.assets | length')" -eq 7
