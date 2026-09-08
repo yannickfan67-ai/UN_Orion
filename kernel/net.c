@@ -1,20 +1,16 @@
 #include <stdint.h>
 #include <stddef.h>
-#include "io.h"
 #include "serial.h"
 #include "interrupts.h"
 #include "net.h"
+#include "netdev.h"
 
-#define RTL_VENDOR 0x10EC
-#define RTL_DEVICE 0x8139
-#define RXBUF_SIZE (8192+16+1500)
 #define ETH_IP 0x0800
 #define ETH_ARP 0x0806
 #define IP_ICMP 1
 #define IP_TCP 6
 #define IP_UDP 17
 
-static uint16_t io_base;
 static uint8_t mac[6];
 static uint8_t ip_addr[4]={10,0,2,15};
 static uint8_t netmask[4]={255,255,255,0};
@@ -24,13 +20,9 @@ static uint8_t gateway_mac[6];
 static int gateway_mac_valid;
 static int ready;
 static uint64_t rx_count,tx_count;
-static uint16_t rx_cur;
-static int tx_cur;
 static uint16_t ip_id=1;
 static uint16_t next_src_port=49152;
 
-static uint8_t rxbuf[RXBUF_SIZE] __attribute__((aligned(256)));
-static uint8_t txbuf[4][2048] __attribute__((aligned(16)));
 
 static void memcopy(void*d,const void*s,size_t n){uint8_t*dd=d;const uint8_t*ss=s;while(n--)*dd++=*ss++;}
 static void memzero(void*d,size_t n){uint8_t*p=d;while(n--)*p++=0;}
@@ -44,28 +36,20 @@ static void put32(uint8_t*p,uint32_t v){p[0]=(uint8_t)(v>>24);p[1]=(uint8_t)(v>>
 static uint16_t get16(const uint8_t*p){return ((uint16_t)p[0]<<8)|p[1];}
 static uint32_t get32(const uint8_t*p){return ((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];}
 
-static uint32_t pci_addr(uint8_t bus,uint8_t dev,uint8_t fn,uint8_t off){return 0x80000000u|((uint32_t)bus<<16)|((uint32_t)dev<<11)|((uint32_t)fn<<8)|(off&0xfc);}
-static uint32_t pci_read32(uint8_t b,uint8_t d,uint8_t f,uint8_t o){outl(0xcf8,pci_addr(b,d,f,o));return inl(0xcfc);}
-static void pci_write32(uint8_t b,uint8_t d,uint8_t f,uint8_t o,uint32_t v){outl(0xcf8,pci_addr(b,d,f,o));outl(0xcfc,v);}
-static int rtl_find(uint8_t *rb,uint8_t *rd,uint8_t *rf){
-    for(unsigned b=0;b<256;b++)for(unsigned d=0;d<32;d++)for(unsigned f=0;f<8;f++){
-        uint32_t id=pci_read32((uint8_t)b,(uint8_t)d,(uint8_t)f,0);if((id&0xffff)==0xffff)continue;
-        if((id&0xffff)==RTL_VENDOR&&(id>>16)==RTL_DEVICE){*rb=b;*rd=d;*rf=f;return 1;}
-        if(f==0){uint32_t h=pci_read32((uint8_t)b,(uint8_t)d,0,0x0c);if(!((h>>16)&0x80))break;}
-    }return 0;
-}
-static int rtl_tx(const void *data,size_t len){
-    if(!ready||len>1792||len<14)return 0;int slot=tx_cur++&3;memcopy(txbuf[slot],data,len);outl((uint16_t)(io_base+0x20+slot*4),(uint32_t)(uintptr_t)txbuf[slot]);outl((uint16_t)(io_base+0x10+slot*4),(uint32_t)len);tx_count++;return 1;
+static int eth_tx(const void *data,size_t len){
+    if(!ready)return 0;
+    if(netdev_tx(data,len)){tx_count++;return 1;}
+    return 0;
 }
 static void eth_header(uint8_t*p,const uint8_t dst[6],uint16_t type){memcopy(p,dst,6);memcopy(p+6,mac,6);put16(p+12,type);}
 static int same_subnet(const uint8_t a[4],const uint8_t b[4]){for(int i=0;i<4;i++)if((a[i]&netmask[i])!=(b[i]&netmask[i]))return 0;return 1;}
 static int ip_equal(const uint8_t a[4],const uint8_t b[4]){return memequal(a,b,4);}
 
 static void send_arp_request(const uint8_t target[4]){
-    uint8_t p[42];static const uint8_t broad[6]={255,255,255,255,255,255};eth_header(p,broad,ETH_ARP);put16(p+14,1);put16(p+16,0x0800);p[18]=6;p[19]=4;put16(p+20,1);memcopy(p+22,mac,6);memcopy(p+28,ip_addr,4);memzero(p+32,6);memcopy(p+38,target,4);rtl_tx(p,sizeof(p));
+    uint8_t p[42];static const uint8_t broad[6]={255,255,255,255,255,255};eth_header(p,broad,ETH_ARP);put16(p+14,1);put16(p+16,0x0800);p[18]=6;p[19]=4;put16(p+20,1);memcopy(p+22,mac,6);memcopy(p+28,ip_addr,4);memzero(p+32,6);memcopy(p+38,target,4);eth_tx(p,sizeof(p));
 }
 static void send_arp_reply(const uint8_t dstmac[6],const uint8_t dstip[4]){
-    uint8_t p[42];eth_header(p,dstmac,ETH_ARP);put16(p+14,1);put16(p+16,0x0800);p[18]=6;p[19]=4;put16(p+20,2);memcopy(p+22,mac,6);memcopy(p+28,ip_addr,4);memcopy(p+32,dstmac,6);memcopy(p+38,dstip,4);rtl_tx(p,sizeof(p));
+    uint8_t p[42];eth_header(p,dstmac,ETH_ARP);put16(p+14,1);put16(p+16,0x0800);p[18]=6;p[19]=4;put16(p+20,2);memcopy(p+22,mac,6);memcopy(p+28,ip_addr,4);memcopy(p+32,dstmac,6);memcopy(p+38,dstip,4);eth_tx(p,sizeof(p));
 }
 static int resolve_next_hop(const uint8_t dest[4],uint8_t out[6]){
     const uint8_t *target=same_subnet(dest,ip_addr)?dest:gateway;
@@ -82,7 +66,7 @@ static uint16_t tcp_checksum(const uint8_t src[4],const uint8_t dst[4],const uin
     uint32_t sum=0;for(int i=0;i<4;i+=2){sum+=((uint16_t)src[i]<<8)|src[i+1];sum+=((uint16_t)dst[i]<<8)|dst[i+1];}sum+=IP_TCP;sum+=(uint16_t)len;for(size_t i=0;i+1<len;i+=2)sum+=((uint16_t)tcp[i]<<8)|tcp[i+1];if(len&1)sum+=(uint16_t)tcp[len-1]<<8;while(sum>>16)sum=(sum&0xffff)+(sum>>16);return (uint16_t)~sum;
 }
 static void send_ip_packet(uint8_t proto,const uint8_t dest[4],const uint8_t *payload,uint16_t plen){
-    uint8_t frame[1600],nh[6];if(plen>1500-20)return;if(!resolve_next_hop(dest,nh))return;eth_header(frame,nh,ETH_IP);make_ipv4(frame+14,proto,dest,plen);memcopy(frame+34,payload,plen);rtl_tx(frame,(size_t)34+plen);
+    uint8_t frame[1600],nh[6];if(plen>1500-20)return;if(!resolve_next_hop(dest,nh))return;eth_header(frame,nh,ETH_IP);make_ipv4(frame+14,proto,dest,plen);memcopy(frame+34,payload,plen);eth_tx(frame,(size_t)34+plen);
 }
 
 /* synchronous transaction state used by early network services */
@@ -126,18 +110,17 @@ static void handle_ip(const uint8_t*p,size_t len){
 }
 static void handle_frame(const uint8_t*p,size_t len){if(len<14)return;uint16_t t=get16(p+12);if(t==ETH_ARP)handle_arp(p+14,len-14);else if(t==ETH_IP)handle_ip(p+14,len-14);}
 
-void net_poll(void){
-    if(!ready)return;int guard=32;while(guard--&&!(inb((uint16_t)(io_base+0x37))&1)){
-        uint16_t off=(uint16_t)(rx_cur%8192);uint16_t status=*(volatile uint16_t*)(rxbuf+off);uint16_t len=*(volatile uint16_t*)(rxbuf+off+2);if(!(status&1)||len<4||len>1600){rx_cur=0;outw((uint16_t)(io_base+0x38),0xfff0);break;}uint8_t pkt[1600];size_t plen=len-4;for(size_t i=0;i<plen;i++)pkt[i]=rxbuf[(off+4+i)%8192];handle_frame(pkt,plen);rx_count++;rx_cur=(uint16_t)((rx_cur+len+4+3)&~3u);outw((uint16_t)(io_base+0x38),(uint16_t)(rx_cur-16));
-    }
-}
+static void rx_dispatch(const uint8_t *frame,size_t len){handle_frame(frame,len);rx_count++;}
+void net_poll(void){if(ready)netdev_poll(rx_dispatch);}
 int net_init(void){
-    uint8_t b,d,f;if(!rtl_find(&b,&d,&f)){serial_write("NET: RTL8139 not found\r\n");return 0;}uint32_t bar=pci_read32(b,d,f,0x10);if(!(bar&1)){serial_write("NET: RTL8139 BAR0 not IO\r\n");return 0;}io_base=(uint16_t)(bar&~3u);uint32_t cs=pci_read32(b,d,f,0x04);cs|=0x00000005u;pci_write32(b,d,f,0x04,cs);
-    outb((uint16_t)(io_base+0x37),0x10);for(unsigned i=0;i<1000000&&inb((uint16_t)(io_base+0x37))&0x10;i++)__asm__ volatile("pause");for(int i=0;i<6;i++)mac[i]=inb((uint16_t)(io_base+i));memzero(rxbuf,sizeof(rxbuf));outl((uint16_t)(io_base+0x30),(uint32_t)(uintptr_t)rxbuf);outw((uint16_t)(io_base+0x3c),0);outl((uint16_t)(io_base+0x44),0x8a);outl((uint16_t)(io_base+0x40),0x03000000);outb((uint16_t)(io_base+0x37),0x0c);ready=1;
-    serial_write("NET: RTL8139 ready MAC=");for(int i=0;i<6;i++){static const char h[]="0123456789ABCDEF";char s[4]={h[mac[i]>>4],h[mac[i]&15],i==5?'\r':':',0};serial_write(s);}serial_write("\n");send_arp_request(gateway);return 1;
+    if(!netdev_init(mac)){serial_write("NET: no supported adapter found\r\n");return 0;}
+    ready=1;gateway_mac_valid=0;
+    serial_write("NET: ");serial_write(netdev_name());serial_write(" ready MAC=");
+    for(int i=0;i<6;i++){static const char h[]="0123456789ABCDEF";char x[4]={h[mac[i]>>4],h[mac[i]&15],i==5?'\r':':',0};serial_write(x);}
+    serial_write("\n");send_arp_request(gateway);return 1;
 }
 int net_ready(void){return ready;}
-const char *net_driver_name(void){return ready?"RTL8139":"none";}
+const char *net_driver_name(void){return ready?netdev_name():"none";}
 void net_get_mac(uint8_t out[6]){memcopy(out,mac,6);}void net_get_ipv4(uint8_t out[4]){memcopy(out,ip_addr,4);}void net_get_gateway(uint8_t out[4]){memcopy(out,gateway,4);}void net_configure(const uint8_t ip[4],const uint8_t mask[4],const uint8_t gw[4],const uint8_t dns[4]){memcopy(ip_addr,ip,4);memcopy(netmask,mask,4);memcopy(gateway,gw,4);memcopy(dns_ip,dns,4);gateway_mac_valid=0;send_arp_request(gateway);}uint64_t net_rx_packets(void){return rx_count;}uint64_t net_tx_packets(void){return tx_count;}
 int net_ping_gateway(uint32_t timeout_ms){if(!ready)return 0;icmp_reply=0;send_icmp_echo(gateway);uint32_t st=now_ms();while(!elapsed(st,timeout_ms)){net_poll();if(icmp_reply)return 1;__asm__ volatile("pause");}return 0;}
 static int parse_ipv4(const char*s,uint8_t out[4]){for(int i=0;i<4;i++){unsigned v=0,n=0;while(*s>='0'&&*s<='9'){v=v*10+(*s++-'0');n++;if(v>255)return 0;}if(!n)return 0;out[i]=(uint8_t)v;if(i<3){if(*s++!='.')return 0;}}return *s==0;}

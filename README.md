@@ -35,8 +35,13 @@ Aster 0.1 currently contains:
 The engine lives in `kernel/aster.c` with its public ABI in `include/aster.h`. UN_Vela is separated into `kernel/vela.c` / `include/vela.h`.
 
 ## Networking
-The first network stack is intentionally small but real:
-- PCI enumeration and RTL8139 driver
+The first network stack is intentionally small but real. The L2/L3/L4 stack is now separated from the NIC driver layer:
+- generic PCI enumeration plus a `netdev` device ABI
+- RTL8139 regression driver
+- AMD PCnet family: Am79C970A / Am79C973
+- Intel PRO/1000 family: 82540EM / 82543GC / 82545EM
+- Intel 82583V detection through the e1000e-family path
+- legacy/transitional virtio-net
 - Ethernet II / ARP / IPv4
 - ICMP echo
 - UDP and DNS A lookup
@@ -50,6 +55,17 @@ Default QEMU user-network profile:
 
 Terminal commands include `net`, `ping`, `vela`, `browser`, `nettest`, and `openwrt`.
 `openwrt` switches the early static profile to `192.168.1.2/24`, gateway/DNS `192.168.1.1`.
+
+
+## 86Box late-era compatibility profile
+A tested late 86Box profile is included at `compat/86box/cuv4xls-c3-733.cfg`:
+- ASUS CUV4X-LS / VIA Apollo Pro 133A
+- VIA C3 Samuel 733 MHz
+- 256 MiB SDRAM
+- Voodoo3 3500 AGP
+- PS/2 input, SB16 and PCnet-FAST III
+
+The i686 Legacy BIOS bootstrap has reached protected mode on this profile with 86Box build 9001 and the 6.0 ROM set. The multi-NIC drivers are implemented but the complete per-model end-to-end network matrix is still being validated.
 
 ## UEFI install / live media
 UN_Orion now has a real El Torito UEFI ISO built directly from the bootable FAT system image.
