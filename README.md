@@ -8,7 +8,7 @@ UN_Orion is a from-scratch x86_64 UEFI operating system with its own framebuffer
 - PS/2 mouse (IRQ12), real cursor, movable/focusable windows
 - Terminal, Files, Notes, Paint, Network, About
 - **UN_Vela 0.2.0-dev**, the native UN_Orion browser shell
-- **Aster Engine 0.1.1**, UN_Vela's from-scratch browser engine
+- **Aster Engine 0.2.0-dev**, UN_Vela's from-scratch browser engine
 
 ## UN_Vela
 UN_Vela is the formal name of UN_Orion's browser. It is not a Chromium/WebKit/Gecko port.
@@ -38,16 +38,16 @@ The current HTTP carrier also:
 The default UN_Orion carrier is still HTTP-only. A platform carrier may advertise TLS capability, but the Orion network stack does not implement TLS yet.
 
 ## Aster Engine
-Aster is the browser engine created specifically for UN_Vela.
+Aster is the browser engine created specifically for UN_Vela. The UN_Orion-integrated copy now uses the same Aster 0.2.0-dev public ABI and structure layout as the standalone `Aster-Engine` repository.
 
-Aster 0.1.1 currently contains:
+Aster 0.2.0-dev currently contains:
 - HTML tokenizer/parser
 - fixed-capacity DOM tree with increased document/paint/text capacities
 - common element recognition (`html`, `head`, `body`, headings, paragraphs, divisions, links, lists, emphasis and code)
 - semantic container recognition (`header`, `footer`, `main`, `nav`, `section`, `article`, `blockquote`, `span`, `hr`)
 - script/style source suppression so unsupported source code is not painted as page text
 - entity decoding including `&amp;`, `&lt;`, `&gt;`, `&nbsp;`, `&quot;` and `&apos;`
-- link metadata and hit-test API
+- link metadata and scroll-aware hit-test API
 - block/inline layout and line wrapping
 - document-height metadata for host scrolling
 - paint-list generation
