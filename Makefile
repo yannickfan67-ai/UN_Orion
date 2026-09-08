@@ -1,4 +1,5 @@
 PROJECT := UN_Orion
+VERSION := 0.0.7
 BUILD := build
 ESP := $(BUILD)/esp
 LEGACY := $(BUILD)/legacy-i686
@@ -6,12 +7,12 @@ LEGACY := $(BUILD)/legacy-i686
 CC := clang
 LD := ld.lld
 
-KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated
+KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -DORION_ARCH_NAME=\"x86_64\"
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
 KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/aster.c kernel/vela.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
-I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated
+I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -DORION_ARCH_NAME=\"i686\"
 I686_LDFLAGS := -nostdlib -static -m elf_i386 -T kernel/i686/linker.ld
 I686_C_SRCS := $(filter-out kernel/interrupts.c,$(KERNEL_C_SRCS)) kernel/i686/interrupts.c kernel/i686/builtins.c
 I686_OBJS := $(patsubst kernel/%.c,$(LEGACY)/kernel/%.o,$(I686_C_SRCS)) $(LEGACY)/kernel/i686/entry.o $(LEGACY)/kernel/i686/arch.o
@@ -55,11 +56,11 @@ $(BUILD)/BOOTX64.EFI: $(BUILD)/BOOTX64.so
 
 image: $(BUILD)/kernel.elf $(BUILD)/BOOTX64.EFI tools/mkfat.py tools/image_manifest.py
 	python3 tools/mkfat.py $(BUILD)/orion.img $(BUILD)/BOOTX64.EFI $(BUILD)/kernel.elf
-	python3 tools/image_manifest.py --input $(BUILD)/orion.img --output $(BUILD)/orion-image.json --media disk-image --arch x86_64
+	python3 tools/image_manifest.py --input $(BUILD)/orion.img --output $(BUILD)/orion-image.json --media disk-image --arch x86_64 --version $(VERSION)
 
 iso: image tools/mkiso.py tools/image_manifest.py
-	python3 tools/mkiso.py $(BUILD)/orion.img $(BUILD)/UN_Orion-v0.0.5-install.iso
-	python3 tools/image_manifest.py --input $(BUILD)/UN_Orion-v0.0.5-install.iso --output $(BUILD)/orion-install.json --media installer-iso --arch x86_64
+	python3 tools/mkiso.py $(BUILD)/orion.img $(BUILD)/UN_Orion-v$(VERSION)-install.iso
+	python3 tools/image_manifest.py --input $(BUILD)/UN_Orion-v$(VERSION)-install.iso --output $(BUILD)/orion-install.json --media installer-iso --arch x86_64 --version $(VERSION)
 
 $(LEGACY):
 	mkdir -p $(LEGACY)
@@ -97,20 +98,20 @@ $(LEGACY)/kernel32.elf: $(I686_OBJS) kernel/i686/linker.ld
 $(LEGACY)/kernel32.bin: $(LEGACY)/kernel32.elf
 	llvm-objcopy -O binary $< $@
 
-legacy-i686: $(BUILD)/UN_Orion-i686-bios.img
+legacy-i686: $(BUILD)/UN_Orion-v$(VERSION)-i686-bios.img
 
-$(BUILD)/UN_Orion-i686-bios.img: $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $(LEGACY)/kernel32.bin tools/mklegacy.py tools/image_manifest.py
+$(BUILD)/UN_Orion-v$(VERSION)-i686-bios.img: $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $(LEGACY)/kernel32.bin tools/mklegacy.py tools/image_manifest.py
 	python3 tools/mklegacy.py $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $@ $(LEGACY)/kernel32.bin
-	python3 tools/image_manifest.py --input $@ --output $(BUILD)/orion-i686-bios.json --media disk-image --arch i686
+	python3 tools/image_manifest.py --input $@ --output $(BUILD)/orion-i686-bios.json --media disk-image --arch i686 --version $(VERSION)
 
-legacy-smoke: $(BUILD)/UN_Orion-i686-bios.img
+legacy-smoke: $(BUILD)/UN_Orion-v$(VERSION)-i686-bios.img
 	rm -f $(BUILD)/serial-i686.log
 	@set +e; timeout 15s qemu-system-i386 -machine pc -m 128M \
-		-drive if=floppy,format=raw,file=$(BUILD)/UN_Orion-i686-bios.img -boot a \
+		-drive if=floppy,format=raw,file=$(BUILD)/UN_Orion-v$(VERSION)-i686-bios.img -boot a \
 		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= \
 		-display none -monitor none -serial file:$(BUILD)/serial-i686.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
-	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial-i686.log
+	grep -q "UN_Orion $(VERSION) alive" $(BUILD)/serial-i686.log
 	grep -q "PMM ready" $(BUILD)/serial-i686.log
 	grep -q "IDT/PIC/PIT/keyboard ready" $(BUILD)/serial-i686.log
 	grep -q "Orion desktop ready" $(BUILD)/serial-i686.log
@@ -136,7 +137,7 @@ smoke: image
 		-drive format=raw,file=$(BUILD)/orion.img \
 		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -display none -monitor none -serial file:$(BUILD)/serial.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
-	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial.log
+	grep -q "UN_Orion $(VERSION) alive" $(BUILD)/serial.log
 	grep -q "PMM ready" $(BUILD)/serial.log
 	grep -q "IDT/PIC/PIT/keyboard ready" $(BUILD)/serial.log
 	grep -q "Orion desktop ready" $(BUILD)/serial.log
@@ -149,11 +150,11 @@ iso-smoke: iso
 	@set +e; timeout 12s qemu-system-x86_64 -machine q35 -m 256M \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,file=$(BUILD)/OVMF_VARS-iso.fd \
-		-cdrom $(BUILD)/UN_Orion-v0.0.5-install.iso -boot d \
+		-cdrom $(BUILD)/UN_Orion-v$(VERSION)-install.iso -boot d \
 		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= -display none -monitor none -serial file:$(BUILD)/serial-iso.log; rc=$$?; \
 		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
 	grep -q "UN_Orion bootloader" $(BUILD)/serial-iso.log
-	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial-iso.log
+	grep -q "UN_Orion $(VERSION) alive" $(BUILD)/serial-iso.log
 	grep -q "Orion desktop ready" $(BUILD)/serial-iso.log
 	@echo "UEFI install ISO smoke test passed"
 
