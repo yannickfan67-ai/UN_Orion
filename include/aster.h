@@ -4,10 +4,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define ASTER_VERSION "0.1.0"
-#define ASTER_MAX_NODES 192
-#define ASTER_MAX_PAINT 192
-#define ASTER_TEXT_CAP 8192
+#define ASTER_VERSION "0.1.1"
+#define ASTER_MAX_NODES 320
+#define ASTER_MAX_PAINT 384
+#define ASTER_TEXT_CAP 16384
 
 typedef enum {
     ASTER_NODE_ROOT=0,
@@ -18,10 +18,13 @@ typedef enum {
 typedef enum {
     ASTER_TAG_UNKNOWN=0,
     ASTER_TAG_HTML, ASTER_TAG_HEAD, ASTER_TAG_BODY,
-    ASTER_TAG_TITLE, ASTER_TAG_H1, ASTER_TAG_H2,
-    ASTER_TAG_P, ASTER_TAG_DIV, ASTER_TAG_BR,
+    ASTER_TAG_TITLE, ASTER_TAG_H1, ASTER_TAG_H2, ASTER_TAG_H3,
+    ASTER_TAG_P, ASTER_TAG_DIV, ASTER_TAG_BR, ASTER_TAG_HR,
     ASTER_TAG_A, ASTER_TAG_UL, ASTER_TAG_OL, ASTER_TAG_LI,
-    ASTER_TAG_STRONG, ASTER_TAG_EM, ASTER_TAG_CODE
+    ASTER_TAG_STRONG, ASTER_TAG_EM, ASTER_TAG_CODE, ASTER_TAG_SPAN,
+    ASTER_TAG_HEADER, ASTER_TAG_FOOTER, ASTER_TAG_MAIN, ASTER_TAG_NAV,
+    ASTER_TAG_SECTION, ASTER_TAG_ARTICLE, ASTER_TAG_BLOCKQUOTE,
+    ASTER_TAG_SCRIPT, ASTER_TAG_STYLE
 } AsterTag;
 
 typedef struct {
@@ -62,6 +65,8 @@ void aster_document_init(AsterDocument *doc);
 int aster_parse_html(AsterDocument *doc,const char *html);
 void aster_layout(AsterDocument *doc,int viewport_width);
 void aster_paint(const AsterDocument *doc,int x,int y,int width,int height,int scroll_y);
+int aster_document_height(const AsterDocument *doc);
+int aster_link_at(const AsterDocument *doc,int x,int y,char *href,size_t cap);
 const char *aster_version(void);
 
 #endif
