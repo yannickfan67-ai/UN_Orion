@@ -4,10 +4,16 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define ASTER_VERSION "0.1.1"
+#define ASTER_VERSION "0.2.0-dev"
+#define ASTER_API_MAJOR 1u
+#define ASTER_API_MINOR 1u
+#define ASTER_API_VERSION ((ASTER_API_MAJOR << 16) | ASTER_API_MINOR)
 #define ASTER_MAX_NODES 320
 #define ASTER_MAX_PAINT 384
 #define ASTER_TEXT_CAP 16384
+
+#define ASTER_PAINT_LINK 1u
+#define ASTER_PAINT_BOLD 2u
 
 typedef enum {
     ASTER_NODE_ROOT=0,
@@ -65,8 +71,9 @@ void aster_document_init(AsterDocument *doc);
 int aster_parse_html(AsterDocument *doc,const char *html);
 void aster_layout(AsterDocument *doc,int viewport_width);
 void aster_paint(const AsterDocument *doc,int x,int y,int width,int height,int scroll_y);
+int aster_link_at(const AsterDocument *doc,int x,int y,int scroll_y,char *url,size_t url_cap);
 int aster_document_height(const AsterDocument *doc);
-int aster_link_at(const AsterDocument *doc,int x,int y,char *href,size_t cap);
+uint32_t aster_api_version(void);
 const char *aster_version(void);
 
 #endif
