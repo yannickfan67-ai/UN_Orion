@@ -11,6 +11,11 @@ KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
 KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/aster.c kernel/vela.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
+I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated
+I686_LDFLAGS := -nostdlib -static -m elf_i386 -T kernel/i686/linker.ld
+I686_C_SRCS := $(filter-out kernel/interrupts.c,$(KERNEL_C_SRCS)) kernel/i686/interrupts.c kernel/i686/builtins.c
+I686_OBJS := $(patsubst kernel/%.c,$(LEGACY)/kernel/%.o,$(I686_C_SRCS)) $(LEGACY)/kernel/i686/entry.o $(LEGACY)/kernel/i686/arch.o
+
 EFIINC := /usr/include/efi
 EFICRT := /usr/lib/crt0-efi-x86_64.o
 EFILDS := /usr/lib/elf_x86_64_efi.lds
@@ -74,26 +79,43 @@ $(LEGACY)/stage2.elf: $(LEGACY)/stage2.o compat/i686-bios/link.ld
 $(LEGACY)/stage2.bin: $(LEGACY)/stage2.elf
 	llvm-objcopy -O binary $< $@
 
-$(LEGACY)/stage2-smoke.o: compat/i686-bios/stage2.S | $(LEGACY)
-	$(CC) -target i386-unknown-none -ffreestanding -DORION_LEGACY_SMOKE=1 -c $< -o $@
+$(LEGACY)/kernel/%.o: kernel/%.c include/bootinfo.h $(BUILD)/generated/.fontstamp | $(LEGACY)
+	mkdir -p $(@D)
+	$(CC) $(I686_CFLAGS) -c $< -o $@
 
-$(LEGACY)/stage2-smoke.elf: $(LEGACY)/stage2-smoke.o compat/i686-bios/link.ld
-	$(LD) -m elf_i386 -T compat/i686-bios/link.ld $< -o $@
+$(LEGACY)/kernel/i686/entry.o: kernel/i686/entry.S | $(LEGACY)
+	mkdir -p $(@D)
+	$(CC) -target i386-unknown-none -march=i686 -ffreestanding -c $< -o $@
 
-$(LEGACY)/stage2-smoke.bin: $(LEGACY)/stage2-smoke.elf
+$(LEGACY)/kernel/i686/arch.o: kernel/i686/arch.S | $(LEGACY)
+	mkdir -p $(@D)
+	$(CC) -target i386-unknown-none -march=i686 -ffreestanding -c $< -o $@
+
+$(LEGACY)/kernel32.elf: $(I686_OBJS) kernel/i686/linker.ld
+	$(LD) $(I686_LDFLAGS) $(I686_OBJS) -o $@
+
+$(LEGACY)/kernel32.bin: $(LEGACY)/kernel32.elf
 	llvm-objcopy -O binary $< $@
 
 legacy-i686: $(BUILD)/UN_Orion-i686-bios.img
 
-$(BUILD)/UN_Orion-i686-bios.img: $(LEGACY)/boot.bin $(LEGACY)/stage2.bin tools/mklegacy.py tools/image_manifest.py
-	python3 tools/mklegacy.py $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $@
+$(BUILD)/UN_Orion-i686-bios.img: $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $(LEGACY)/kernel32.bin tools/mklegacy.py tools/image_manifest.py
+	python3 tools/mklegacy.py $(LEGACY)/boot.bin $(LEGACY)/stage2.bin $@ $(LEGACY)/kernel32.bin
 	python3 tools/image_manifest.py --input $@ --output $(BUILD)/orion-i686-bios.json --media disk-image --arch i686
 
-$(BUILD)/UN_Orion-i686-bios-smoke.img: $(LEGACY)/boot.bin $(LEGACY)/stage2-smoke.bin tools/mklegacy.py
-	python3 tools/mklegacy.py $(LEGACY)/boot.bin $(LEGACY)/stage2-smoke.bin $@
-
-legacy-smoke: $(BUILD)/UN_Orion-i686-bios-smoke.img scripts/legacy_smoke.py
-	python3 scripts/legacy_smoke.py
+legacy-smoke: $(BUILD)/UN_Orion-i686-bios.img
+	rm -f $(BUILD)/serial-i686.log
+	@set +e; timeout 15s qemu-system-i386 -machine pc -m 128M \
+		-drive if=floppy,format=raw,file=$(BUILD)/UN_Orion-i686-bios.img -boot a \
+		-netdev user,id=n0 -device rtl8139,netdev=n0,romfile= \
+		-display none -monitor none -serial file:$(BUILD)/serial-i686.log; rc=$$?; \
+		if [ $$rc -ne 0 ] && [ $$rc -ne 124 ]; then exit $$rc; fi
+	grep -q "UN_Orion kernel 0.0.5 alive" $(BUILD)/serial-i686.log
+	grep -q "PMM ready" $(BUILD)/serial-i686.log
+	grep -q "IDT/PIC/PIT/keyboard ready" $(BUILD)/serial-i686.log
+	grep -q "Orion desktop ready" $(BUILD)/serial-i686.log
+	grep -q "Network stack ready" $(BUILD)/serial-i686.log
+	@echo "i686 Legacy BIOS full-system smoke test passed"
 
 $(BUILD)/OVMF_VARS.fd: | $(BUILD)
 	cp $(OVMF_VARS) $@
