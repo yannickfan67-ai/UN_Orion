@@ -9,7 +9,7 @@ LD := ld.lld
 
 KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -DORION_ARCH_NAME=\"x86_64\"
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
-KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/aster.c kernel/vela.c
+KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/net_resource.c kernel/aster.c kernel/vela.c kernel/vela_image.c kernel/browser_image.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
 I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -DORION_ARCH_NAME=\"i686\"
