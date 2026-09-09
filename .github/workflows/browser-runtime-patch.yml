@@ -25,6 +25,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Makefile kernel/desktop.c kernel/net.c
-          git commit -m "browser: wire desktop navigation images and wheel [browser-patch-applied]"
+          git add -A
+          git commit -m "browser: remove freestanding libc dependency [browser-patch-applied]"
           git push origin HEAD:feat/browser-runtime-0.3-20260909
