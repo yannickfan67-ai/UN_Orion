@@ -1,0 +1,38 @@
+name: http-compat-patch
+on:
+  push:
+    branches: [feat/http-redirect-content-length-20260909]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[http-compat-patch-applied]') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/http-redirect-content-length-20260909
+      - name: Apply HTTP compatibility patch
+        run: python3 tools/patch_http_compat.py
+      - name: Install network-smoke toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
+      - name: Run end-to-end redirect smoke
+        run: |
+          make image
+          make network-smoke
+      - name: Commit patched sources
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kernel/net.c scripts/network_smoke.py
+          if git diff --cached --quiet; then
+            echo "No patch changes needed"
+            exit 0
+          fi
+          git commit -m "net: follow HTTP redirects and honor Content-Length [http-compat-patch-applied]"
+          git push origin HEAD:feat/http-redirect-content-length-20260909
