@@ -5,9 +5,9 @@
 #include "vela_platform.h"
 #include "aster.h"
 #define VELA_NAME "UN_Vela"
-#define VELA_VERSION "0.3.0"
+#define VELA_VERSION "0.3.1-dev"
 #define VELA_API_MAJOR 1u
-#define VELA_API_MINOR 2u
+#define VELA_API_MINOR 3u
 #define VELA_API_VERSION ((VELA_API_MAJOR << 16) | VELA_API_MINOR)
 #define VELA_CAP_PLATFORM_ABI (1ull << 0)
 #define VELA_CAP_HISTORY (1ull << 1)

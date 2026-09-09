@@ -24,9 +24,13 @@ EFILIBDIR := /usr/lib
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
 
-.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke legacy-i686 legacy-smoke
+.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke legacy-i686 legacy-smoke aster-smoke
 all: image
 kernel: $(BUILD)/kernel.elf
+
+aster-smoke: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -Iinclude kernel/aster.c tests/aster_selector_smoke.c -o $(BUILD)/aster-selector-smoke
+	./$(BUILD)/aster-selector-smoke
 
 $(BUILD):
 	mkdir -p $(BUILD)
