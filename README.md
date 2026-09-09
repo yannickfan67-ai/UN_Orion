@@ -8,8 +8,8 @@ UN_Orion is a from-scratch x86_64 UEFI operating system with its own framebuffer
 - PS/2 mouse (IRQ12), real cursor, movable/focusable windows
 - IntelliMouse wheel negotiation with automatic 3-byte PS/2 fallback
 - Terminal, Files, Notes, Paint, Network, About
-- **UN_Vela 0.3.0**, the native UN_Orion browser shell
-- **Aster Engine 0.3.0**, UN_Vela's from-scratch browser engine
+- **UN_Vela 0.3.1-dev**, the native UN_Orion browser shell
+- **Aster Engine 0.3.1**, UN_Vela's from-scratch browser engine
 
 ## UN_Vela
 UN_Vela is UN_Orion's primary browser. It is not a Chromium/WebKit/Gecko port.
@@ -20,8 +20,9 @@ Current Orion browser integration includes:
 - clickable document links with relative/root/scheme-relative URL resolution
 - mouse-wheel scrolling with viewport-aware clamping
 - HTML markup delivery through Vela Platform ABI 1.1
+- Vela API 1.3 with the Aster 0.3.1 document ABI
 - Orion-native HTTP and binary-resource carrier
-- lightweight CSS support through Aster 0.3
+- lightweight CSS support through Aster 0.3.1
 - safe JavaScript subset in the full profile
 - BMP 24/32-bit and PPM P6 image resources with framebuffer scaling
 - navigation history and local HTML documents
@@ -29,7 +30,7 @@ Current Orion browser integration includes:
 
 ### Browser content pipeline
 
-`network carrier -> UN_Vela 0.3 -> Aster 0.3 -> Orion framebuffer`
+`network carrier -> UN_Vela 0.3.1-dev -> Aster 0.3.1 -> Orion framebuffer`
 
 The transport keeps HTML markup intact instead of flattening it into text. The current HTTP carrier also requests identity encoding, accepts CRLF or LF-only header boundaries, handles chunked bodies as a compatibility fallback, and keeps HTTP status information separate from page markup.
 
@@ -45,18 +46,22 @@ The **freestanding UN_Orion kernel does not yet ship a trusted TLS/crypto provid
 A compact, intentionally non-web-complete JavaScript subset is available in the full Vela profile. It currently recognizes controlled operations such as `document.title`, `document.body.innerHTML`, `document.write`, `console.log`, and location navigation. The separate Orion recovery-browser shell uses `VELA_PROFILE_LITE`, which disables JavaScript while sharing the same HTML/CSS/layout/history core.
 
 ## Aster Engine
-Aster 0.3.0 is the rendering engine used by UN_Vela. The integrated copy follows the standalone `Aster-Engine` public ABI.
+Aster 0.3.1 is the rendering engine used by UN_Vela. The integrated copy follows the standalone `Aster-Engine` public ABI.
 
 Current Aster features include:
 - fixed-capacity HTML tokenizer/parser and DOM tree
 - common semantic elements, headings, paragraphs, links, lists and emphasis
-- CSS tag selectors plus `*` and inline style
+- CSS selectors: `*`, tag, `.class`, `#id`, `tag.class`, `tag#id`, and comma-separated simple selector lists
+- multi-class token matching and compact ID/class/tag specificity for color and size cascade
+- parent-element CSS propagation into child text, plus inline style handling
 - `color`, bold weight, size scaling, underline and `display:none`
 - `<img>` layout items and host image rendering callback
 - entity decoding and script/style source suppression
 - link metadata and scroll-aware hit testing
 - block/inline layout, line wrapping and document-height metadata
 - native framebuffer painting through UN_Orion graphics APIs
+
+Descendant, child, attribute and pseudo selectors remain intentionally unsupported in this lightweight CSS engine.
 
 The engine lives in `kernel/aster.c` with its public ABI in `include/aster.h`. UN_Vela is separated into `kernel/vela.c` / `include/vela.h`, with the host boundary in `include/vela_platform.h`.
 
@@ -142,6 +147,7 @@ make run
 
 ## Validation
 The main CI builds boot media and exercises:
+- Aster selector/cascade host smoke
 - x86_64 UEFI QEMU boot
 - i686 Legacy BIOS full-system boot
 - UEFI install ISO boot
@@ -156,4 +162,4 @@ The main CI builds boot media and exercises:
 - Native image decoding currently targets lightweight BMP/PPM formats rather than the full modern web image set.
 - Files/Notes persistence and ORX loading from disk are still in progress.
 
-Stable desktop release: `v0.0.4`. The current `v0.0.7` development line includes networking, multi-firmware compatibility, install media, UN_Vela/Aster 0.3, images, CSS/JS subsets and browser interaction work.
+Stable desktop release: `v0.0.4`. The current `v0.0.7` development line includes networking, multi-firmware compatibility, install media, UN_Vela/Aster 0.3.x, images, CSS/JS subsets and browser interaction work.
