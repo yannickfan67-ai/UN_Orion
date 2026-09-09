@@ -13,6 +13,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
+      - name: Aster selector host smoke
+        run: make aster-smoke
       - name: Build boot media
         run: |
           make all
