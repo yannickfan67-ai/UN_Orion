@@ -20,6 +20,14 @@ vars_template=find_ovmf('OVMF_VARS',['OVMF_VARS_4M.fd','OVMF_VARS.fd'])
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args): pass
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(302)
+            self.send_header('Location','/final.html')
+            self.send_header('Content-Length','0')
+            self.end_headers()
+            return
+        return super().do_GET()
 
 def serve(directory):
     handler=lambda *a,**kw: Quiet(*a,directory=str(directory),**kw)
@@ -34,7 +42,7 @@ def hmp(sock,cmd):
     s.close()
 
 site=ROOT/'testsite'; site.mkdir(exist_ok=True)
-(site/'index.html').write_text(
+(site/'final.html').write_text(
     '<!doctype html><html><head><title>CI Orion HTTP</title><style>.hidden{display:none}</style></head>'
     '<body><header><h1>CI Orion HTTP</h1></header><main><section><h2>Transport</h2>'
     '<p>network browser smoke &amp; markup preservation passed</p><h3>Semantic HTML</h3>'
@@ -59,8 +67,8 @@ with tempfile.TemporaryDirectory(prefix='orion-net-') as td:
         while time.time()<deadline:
             text=serial.read_text(errors='ignore') if serial.exists() else ''
             if 'HTTP test failed' in text: raise RuntimeError(text[-1600:])
-            if 'HTTP test success' in text and 'VELA: title CI Orion HTTP' in text and 'HTTP: markup response received' in text:
-                print('UN_Orion network/browser smoke passed: RTL8139 -> TCP -> HTTP markup -> UN_Vela -> Aster title parse')
+            if 'HTTP test success' in text and 'VELA: title CI Orion HTTP' in text and 'HTTP: redirect http://10.0.2.2:18080/final.html' in text and 'HTTP: markup response received' in text:
+                print('UN_Orion network/browser smoke passed: RTL8139 -> TCP -> HTTP 302 redirect -> Content-Length body -> UN_Vela -> Aster title parse')
                 sys.exit(0)
             time.sleep(.1)
         raise RuntimeError('HTTP/browser smoke timeout: '+(serial.read_text(errors='ignore')[-1600:] if serial.exists() else ''))
