@@ -14,8 +14,12 @@ static int has_text(const AsterDocument*d,const char*needle){
     for(unsigned i=0;i<d->paint_count;i++){
         const AsterPaintItem*p=&d->paint[i];
         if(!p->text_len)continue;
-        char b[96];unsigned n=p->text_len<sizeof(b)-1?p->text_len:(unsigned)sizeof(b)-1;
-        for(unsigned j=0;j<n;j++)b[j]=d->text[p->text_off+j];b[n]=0;
+        char b[96];
+        unsigned n=p->text_len<sizeof(b)-1?p->text_len:(unsigned)sizeof(b)-1;
+        for(unsigned j=0;j<n;j++){
+            b[j]=d->text[p->text_off+j];
+        }
+        b[n]=0;
         if(strstr(b,needle))return 1;
     }
     return 0;
