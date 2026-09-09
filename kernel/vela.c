@@ -1,105 +1,41 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "vela.h"
-#include "aster.h"
 #include "net.h"
 #include "serial.h"
 
-#define VELA_HISTORY_MAX 8
-#define VELA_URL_CAP 192
+#define VELA_HISTORY_MAX 12
+#define VELA_URL_CAP 256
+#define VELA_RAW_CAP 32768
+#define VELA_JS_TEXT_CAP 1536
 
 static AsterDocument g_doc;
-static char g_raw[32768];
-static char g_url[VELA_URL_CAP];
-static char g_status[128];
-static char g_history[VELA_HISTORY_MAX][VELA_URL_CAP];
-static int g_url_len;
-static int g_viewport=720;
-static int g_scroll;
-static int g_history_count;
-static int g_history_index=-1;
-static VelaPlatformOps g_platform;
-static void *g_platform_context;
-static int g_platform_ready;
+static char g_raw[VELA_RAW_CAP],g_url[VELA_URL_CAP],g_status[160],g_history[VELA_HISTORY_MAX][VELA_URL_CAP];
+static int g_url_len,g_viewport=720,g_viewport_h=420,g_scroll,g_history_count,g_history_index=-1;
+static uint32_t g_features=VELA_PROFILE_FULL;
+static VelaPlatformOps g_platform;static void*g_platform_context;static int g_platform_ready;
 
-static void bytes_zero(void *p,size_t n){uint8_t*b=(uint8_t*)p;while(n--)*b++=0;}
-static void bytes_copy(void*d,const void*s,size_t n){uint8_t*dd=(uint8_t*)d;const uint8_t*ss=(const uint8_t*)s;while(n--)*dd++=*ss++;}
-static void copy(char*d,size_t cap,const char*s){size_t i=0;if(!cap)return;while(s&&s[i]&&i+1<cap){d[i]=s[i];i++;}d[i]=0;}
-static void append(char*d,size_t cap,const char*s){size_t i=0;while(i<cap&&d[i])i++;while(s&&*s&&i+1<cap)d[i++]=*s++;if(i<cap)d[i]=0;}
-static char lower(char c){return c>='A'&&c<='Z'?(char)(c+32):c;}
-static int starts_ci(const char*s,const char*p){while(*p){if(!*s||lower(*s++)!=lower(*p++))return 0;}return 1;}
-static void set_url(const char*s){copy(g_url,sizeof(g_url),s?s:"");g_url_len=0;while(g_url_len<(int)sizeof(g_url)-1&&g_url[g_url_len])g_url_len++;}
-static void request_repaint(void){if(g_platform_ready&&(g_platform.capabilities&VELA_PLATFORM_CAP_REPAINT)&&g_platform.request_repaint)g_platform.request_repaint(g_platform_context);}
-static void platform_log(uint32_t level,const char*message){if(g_platform_ready&&(g_platform.capabilities&VELA_PLATFORM_CAP_LOG)&&g_platform.log)g_platform.log(g_platform_context,level,message);}
-static void parse_current(void){aster_parse_html(&g_doc,g_raw);aster_layout(&g_doc,g_viewport>40?g_viewport-40:g_viewport);g_scroll=0;}
-static int canonicalize_url(const char*url,char*out,size_t cap){
-    if(!url||!out||cap<9)return 0;while(*url==' '||*url=='\t')url++;if(!*url)return 0;
-    if(starts_ci(url,"https://")){if(!(g_platform_ready&&(g_platform.capabilities&VELA_PLATFORM_CAP_TLS))){copy(g_status,sizeof(g_status),"HTTPS requires a TLS-capable host");return 0;}copy(out,cap,url);return 1;}
-    if(starts_ci(url,"http://")){copy(out,cap,url);return 1;}
-    if(starts_ci(url,"file:")||starts_ci(url,"javascript:")||starts_ci(url,"data:")||starts_ci(url,"mailto:")){copy(g_status,sizeof(g_status),"Unsupported URL scheme");return 0;}
-    copy(out,cap,"http://");append(out,cap,url);return 1;
-}
-static void start_page(void){
-    copy(g_raw,sizeof(g_raw),
-        "<html><head><title>UN_Vela</title></head><body>"
-        "<header><h1>UN_Vela</h1><p>Portable browser shell powered by Aster Engine.</p></header>"
-        "<main><section><h2>Platform carrier ABI</h2>"
-        "<p>The browser core now uses Vela Platform ABI 1 for host HTTP and future services.</p>"
-        "<p>UN_Orion installs its native network backend by default; hosted ports can provide their own carrier.</p>"
-        "<h3>Content compatibility</h3><p>HTTP markup now reaches Aster intact, with semantic containers and script/style suppression.</p>"
-        "</section></main><footer><p>History, scrolling and local HTML APIs are available to hosts.</p></footer>"
-        "</body></html>");
-    parse_current();
-}
-static void history_push(const char *url){
-    if(!url||!*url)return;
-    if(g_history_index>=0){const char*a=g_history[g_history_index],*b=url;int same=1;while(*a||*b){if(*a++!=*b++){same=0;break;}}if(same)return;}
-    if(g_history_index+1<g_history_count)g_history_count=g_history_index+1;
-    if(g_history_count<VELA_HISTORY_MAX){g_history_index=g_history_count++;copy(g_history[g_history_index],VELA_URL_CAP,url);}else{for(int i=1;i<VELA_HISTORY_MAX;i++)copy(g_history[i-1],VELA_URL_CAP,g_history[i]);g_history_index=VELA_HISTORY_MAX-1;copy(g_history[g_history_index],VELA_URL_CAP,url);}
-}
-static int navigate(const char *url,int push){
-    char normalized[VELA_URL_CAP];
-    if(!url||!*url){copy(g_status,sizeof(g_status),"Enter an HTTP address");return 0;}
-    if(!g_platform_ready||!(g_platform.capabilities&VELA_PLATFORM_CAP_HTTP)||!g_platform.http_get){copy(g_status,sizeof(g_status),"No HTTP backend installed");return 0;}
-    if(!canonicalize_url(url,normalized,sizeof(normalized)))return 0;
-    copy(g_status,sizeof(g_status),"Loading...");request_repaint();platform_log(1,"loading document");
-    if(!g_platform.http_get(g_platform_context,normalized,g_raw,sizeof(g_raw),g_status,sizeof(g_status)))return 0;
-    set_url(normalized);parse_current();if(push)history_push(normalized);
-    serial_write("VELA: title ");serial_write(g_doc.title);serial_write("\r\n");
-    if(g_doc.title[0]){char s[128];copy(s,sizeof(s),g_status);copy(g_status,sizeof(g_status),g_doc.title);append(g_status,sizeof(g_status)," / ");append(g_status,sizeof(g_status),s);}
-    request_repaint();return 1;
-}
-static int orion_http_get(void *context,const char *url,char *body,size_t body_cap,char *status,size_t status_cap){(void)context;return net_http_get(url,body,body_cap,status,status_cap);}
-static void orion_log(void *context,uint32_t level,const char *message){(void)context;(void)level;serial_write("VELA: ");serial_write(message?message:"");serial_write("\r\n");}
-
-int vela_set_platform(const VelaPlatformOps *platform,void *context){
-    bytes_zero(&g_platform,sizeof(g_platform));g_platform_context=context;g_platform_ready=0;if(!platform)return 1;if(!vela_platform_is_compatible(platform))return 0;size_t n=platform->struct_size<sizeof(g_platform)?platform->struct_size:sizeof(g_platform);bytes_copy(&g_platform,platform,n);g_platform_ready=1;return 1;
-}
-uint32_t vela_api_version(void){return VELA_API_VERSION;}
-uint64_t vela_capabilities(void){return VELA_CAP_PLATFORM_ABI|VELA_CAP_HISTORY|VELA_CAP_SCROLL|VELA_CAP_LOCAL_HTML|VELA_CAP_ASTER_DOC;}
-uint64_t vela_platform_capabilities(void){return g_platform_ready?g_platform.capabilities:0;}
-int vela_init_ex(int viewport_width,const VelaPlatformOps*platform,void*context){
-    g_viewport=viewport_width>120?viewport_width:120;g_scroll=0;g_history_count=0;g_history_index=-1;set_url("");if(!vela_set_platform(platform,context))return 0;copy(g_status,sizeof(g_status),"Ready / Aster Engine ");append(g_status,sizeof(g_status),aster_version());start_page();return 1;
-}
-void vela_init(int viewport_width){
-    VelaPlatformOps ops;bytes_zero(&ops,sizeof(ops));ops.abi_version=VELA_PLATFORM_ABI_VERSION;ops.struct_size=sizeof(ops);ops.capabilities=VELA_PLATFORM_CAP_HTTP|VELA_PLATFORM_CAP_LOG;ops.http_get=orion_http_get;ops.log=orion_log;(void)vela_init_ex(viewport_width,&ops,0);
-}
-void vela_set_viewport(int viewport_width){if(viewport_width<120)viewport_width=120;if(viewport_width!=g_viewport){g_viewport=viewport_width;aster_layout(&g_doc,g_viewport>40?g_viewport-40:g_viewport);vela_set_scroll(g_scroll);request_repaint();}}
-void vela_input_char(char c){if(g_url_len<(int)sizeof(g_url)-1){g_url[g_url_len++]=c;g_url[g_url_len]=0;request_repaint();}}
-void vela_backspace(void){if(g_url_len){g_url[--g_url_len]=0;request_repaint();}}
-int vela_load_url(const char*url){return navigate(url,1);}
-int vela_go(void){return navigate(g_url,1);}
-int vela_load_html(const char*html,const char*virtual_url){if(!html)return 0;copy(g_raw,sizeof(g_raw),html);set_url(virtual_url?virtual_url:"about:local");parse_current();copy(g_status,sizeof(g_status),"Local document");history_push(g_url);request_repaint();return 1;}
-int vela_can_back(void){return g_history_index>0;}
-int vela_can_forward(void){return g_history_index>=0&&g_history_index+1<g_history_count;}
-int vela_back(void){if(!vela_can_back())return 0;int target=g_history_index-1;char u[VELA_URL_CAP];copy(u,sizeof(u),g_history[target]);if(!navigate(u,0))return 0;g_history_index=target;return 1;}
-int vela_forward(void){if(!vela_can_forward())return 0;int target=g_history_index+1;char u[VELA_URL_CAP];copy(u,sizeof(u),g_history[target]);if(!navigate(u,0))return 0;g_history_index=target;return 1;}
-int vela_reload(void){if(!g_url[0])return 0;return navigate(g_url,0);}
-void vela_set_scroll(int y){int max=aster_document_height(&g_doc)>0?aster_document_height(&g_doc)-1:0;if(y<0)y=0;if(y>max)y=max;g_scroll=y;request_repaint();}
-void vela_scroll_by(int dy){vela_set_scroll(g_scroll+dy);}
-int vela_scroll(void){return g_scroll;}
-const char*vela_url(void){return g_url;}
-const char*vela_status(void){return g_status;}
-const char*vela_title(void){return g_doc.title[0]?g_doc.title:VELA_NAME;}
-const AsterDocument*vela_document(void){return &g_doc;}
-void vela_paint(int x,int y,int width,int height){vela_set_viewport(width);aster_paint(&g_doc,x+18,y+10,width-36,height-20,g_scroll);}
+static void zero(void*p,size_t n){uint8_t*b=p;while(n--)*b++=0;}static void memcp(void*d,const void*s,size_t n){uint8_t*a=d;const uint8_t*b=s;while(n--)*a++=*b++;}
+static void cp(char*d,size_t c,const char*s){size_t i=0;if(!c)return;while(s&&s[i]&&i+1<c){d[i]=s[i];i++;}d[i]=0;}static void cat(char*d,size_t c,const char*s){size_t i=0;while(i<c&&d[i])i++;while(s&&*s&&i+1<c)d[i++]=*s++;if(i<c)d[i]=0;}
+static char low(char c){return c>='A'&&c<='Z'?(char)(c+32):c;}static int ci(const char*s,const char*p){if(!s||!p)return 0;while(*p){if(!*s||low(*s++)!=low(*p++))return 0;}return 1;}static const char*findci(const char*s,const char*n){if(!s||!n||!*n)return s;for(;*s;s++)if(ci(s,n))return s;return 0;}
+static void seturl(const char*s){cp(g_url,sizeof(g_url),s?s:"");g_url_len=0;while(g_url[g_url_len]&&g_url_len<(int)sizeof(g_url)-1)g_url_len++;}
+static void repaint(void){if(g_platform_ready&&(g_platform.capabilities&VELA_PLATFORM_CAP_REPAINT)&&g_platform.request_repaint)g_platform.request_repaint(g_platform_context);}static void logm(uint32_t l,const char*m){if(g_platform_ready&&(g_platform.capabilities&VELA_PLATFORM_CAP_LOG)&&g_platform.log)g_platform.log(g_platform_context,l,m);}
+static void parse(void){aster_parse_html(&g_doc,g_raw);aster_layout(&g_doc,g_viewport>40?g_viewport-40:g_viewport);g_scroll=0;}
+static int canon(const char*u,char*out,size_t cap){if(!u||!out||cap<9)return 0;while(*u==' '||*u=='\t')u++;if(!*u){cp(g_status,sizeof(g_status),"Enter an HTTP/HTTPS address");return 0;}if(ci(u,"https://")){if(!(g_platform_ready&&(g_platform.capabilities&VELA_PLATFORM_CAP_TLS))){cp(g_status,sizeof(g_status),"HTTPS needs an Orion TLS provider");return 0;}cp(out,cap,u);return 1;}if(ci(u,"http://")){cp(out,cap,u);return 1;}if(ci(u,"file:")||ci(u,"data:")||ci(u,"mailto:")){cp(g_status,sizeof(g_status),"Unsupported URL scheme");return 0;}if(ci(u,"javascript:")){cp(g_status,sizeof(g_status),"Use link activation for JavaScript URLs");return 0;}cp(out,cap,"http://");cat(out,cap,u);return 1;}
+static int origin(const char*b,char*out,size_t cap,int dir){if(!b||!ci(b,"http"))return 0;const char*p=findci(b,"://");if(!p)return 0;p+=3;const char*s=p;while(*s&&*s!='/')s++;if(!*s){cp(out,cap,b);if(dir)cat(out,cap,"/");return 1;}size_t n;if(!dir)n=(size_t)(s-b);else{const char*last=s;for(const char*q=s;*q;q++)if(*q=='/')last=q;n=(size_t)(last-b)+1;}if(n>=cap)n=cap-1;for(size_t i=0;i<n;i++)out[i]=b[i];out[n]=0;return 1;}
+static int resolve(const char*b,const char*r,char*out,size_t cap){if(!r||!*r)return 0;if(ci(r,"http://")||ci(r,"https://"))return canon(r,out,cap);if(ci(r,"javascript:")){cp(out,cap,r);return 1;}if(r[0]=='#'){cp(out,cap,b?b:"");return out[0]!=0;}if(r[0]=='/'&&r[1]=='/'){cp(out,cap,b&&ci(b,"https://")?"https:":"http:");cat(out,cap,r);return 1;}if(r[0]=='/'){if(!origin(b,out,cap,0))return canon(r,out,cap);cat(out,cap,r);return 1;}if(!origin(b,out,cap,1))return canon(r,out,cap);cat(out,cap,r);return 1;}
+static size_t jsstr(const char*p,char*out,size_t cap,const char**after){while(*p==' '||*p=='\t')p++;if(*p!='\''&&*p!='\"')return 0;char q=*p++;size_t o=0;while(*p&&*p!=q){char c=*p++;if(c=='\\'&&*p){char e=*p++;c=e=='n'?'\n':e=='r'?'\r':e=='t'?'\t':e;}if(o+1<cap)out[o++]=c;}if(*p==q)p++;out[o]=0;if(after)*after=p;return o;}
+static int jsassign(const char*s,const char*e,char*out,size_t cap){const char*p=findci(s,e);if(!p)return 0;while(*p&&*p!='=')p++;if(*p!='=')return 0;return jsstr(p+1,out,cap,0)>0;}static int jscall(const char*s,const char*n,char*out,size_t cap){const char*p=findci(s,n);if(!p)return 0;while(*p&&*p!='(')p++;return *p=='('&&jsstr(p+1,out,cap,0)>0;}
+static void scripts(char*redir,size_t rc,char*title,size_t tc,char*body,size_t bc,char*write,size_t wc){const char*p=g_raw;while((p=findci(p,"<script"))){const char*g=p;while(*g&&*g!='>')g++;if(!*g)break;g++;const char*e=findci(g,"</script");if(!e)break;size_t n=(size_t)(e-g);if(n>=VELA_JS_TEXT_CAP)n=VELA_JS_TEXT_CAP-1;char s[VELA_JS_TEXT_CAP],tmp[1024];for(size_t i=0;i<n;i++)s[i]=g[i];s[n]=0;if(jsassign(s,"document.title",tmp,sizeof(tmp)))cp(title,tc,tmp);if(jsassign(s,"document.body.innerhtml",tmp,sizeof(tmp)))cp(body,bc,tmp);if(jsassign(s,"window.location.href",tmp,sizeof(tmp))||jsassign(s,"location.href",tmp,sizeof(tmp)))cp(redir,rc,tmp);if(jscall(s,"document.write",tmp,sizeof(tmp)))cat(write,wc,tmp);if(jscall(s,"console.log",tmp,sizeof(tmp)))logm(1,tmp);p=e+8;}}
+static void preprocess(char*r,size_t rc,char*t,size_t tc){r[0]=t[0]=0;if(!(g_features&VELA_FEATURE_JAVASCRIPT))return;char body[4096],w[2048];zero(body,sizeof(body));zero(w,sizeof(w));scripts(r,rc,t,tc,body,sizeof(body),w,sizeof(w));if(body[0]){char b[VELA_RAW_CAP];b[0]=0;cat(b,sizeof(b),"<html><head><title>UN_Vela script</title></head><body>");cat(b,sizeof(b),body);cat(b,sizeof(b),w);cat(b,sizeof(b),"</body></html>");cp(g_raw,sizeof(g_raw),b);}else if(w[0])cat(g_raw,sizeof(g_raw),w);}
+static void hist(const char*u){if(!u||!*u)return;if(g_history_index>=0){const char*a=g_history[g_history_index],*b=u;int same=1;while(*a||*b)if(*a++!=*b++){same=0;break;}if(same)return;}if(g_history_index+1<g_history_count)g_history_count=g_history_index+1;if(g_history_count<VELA_HISTORY_MAX){g_history_index=g_history_count++;cp(g_history[g_history_index],VELA_URL_CAP,u);}else{for(int i=1;i<VELA_HISTORY_MAX;i++)cp(g_history[i-1],VELA_URL_CAP,g_history[i]);g_history_index=VELA_HISTORY_MAX-1;cp(g_history[g_history_index],VELA_URL_CAP,u);}}
+static int navdepth(const char*u,int push,int depth){char n[VELA_URL_CAP];if(!u||!*u){cp(g_status,sizeof(g_status),"Enter an HTTP/HTTPS address");return 0;}if(!g_platform_ready||!(g_platform.capabilities&VELA_PLATFORM_CAP_HTTP)||!g_platform.http_get){cp(g_status,sizeof(g_status),"No HTTP backend installed");return 0;}if(!canon(u,n,sizeof(n)))return 0;cp(g_status,sizeof(g_status),"Loading...");repaint();logm(1,"loading document");if(!g_platform.http_get(g_platform_context,n,g_raw,sizeof(g_raw),g_status,sizeof(g_status)))return 0;seturl(n);char red[VELA_URL_CAP],title[96];preprocess(red,sizeof(red),title,sizeof(title));parse();if(title[0])cp(g_doc.title,sizeof(g_doc.title),title);if(push)hist(n);serial_write("VELA: title ");serial_write(g_doc.title);serial_write("\r\n");if(red[0]&&depth<2){char next[VELA_URL_CAP];if(resolve(n,red,next,sizeof(next))&&!ci(next,"javascript:"))return navdepth(next,push,depth+1);}if(g_doc.title[0]){char s[160];cp(s,sizeof(s),g_status);cp(g_status,sizeof(g_status),g_doc.title);cat(g_status,sizeof(g_status)," / ");cat(g_status,sizeof(g_status),s);}repaint();return 1;}static int nav(const char*u,int p){return navdepth(u,p,0);}
+static void startpage(void){cp(g_raw,sizeof(g_raw),"<html><head><title>UN_Vela</title><style>h2{color:#315e80} a{font-weight:bold}</style></head><body><h1>UN_Vela 0.3</h1><h2>Orion native carrier</h2><p>HTML, CSS subset, images, links, history, scrolling and safe JavaScript subset are enabled.</p><p>HTTP resources are native. HTTPS is enabled only when a trusted Orion TLS provider is installed.</p></body></html>");parse();}
+static int ohttp(void*c,const char*u,char*b,size_t bc,char*s,size_t sc){(void)c;return net_http_get(u,b,bc,s,sc);}static int ores(void*c,const char*u,uint8_t*d,size_t dc,size_t*n,char*type,size_t tc,char*s,size_t sc){(void)c;int ok=net_http_get_bytes(u,d,dc,n,s,sc);if(type&&tc){if(ok&&*n>=2&&d[0]=='B'&&d[1]=='M')cp(type,tc,"image/bmp");else if(ok&&*n>=2&&d[0]=='P'&&d[1]=='6')cp(type,tc,"image/x-portable-pixmap");else cp(type,tc,"application/octet-stream");}return ok;}static void olog(void*c,uint32_t l,const char*m){(void)c;(void)l;serial_write("VELA: ");serial_write(m?m:"");serial_write("\r\n");}
+int vela_set_platform(const VelaPlatformOps*p,void*c){zero(&g_platform,sizeof(g_platform));g_platform_context=c;g_platform_ready=0;if(!p)return 1;if(!vela_platform_is_compatible(p))return 0;size_t n=p->struct_size<sizeof(g_platform)?p->struct_size:sizeof(g_platform);memcp(&g_platform,p,n);g_platform_ready=1;return 1;}uint32_t vela_api_version(void){return VELA_API_VERSION;}uint64_t vela_capabilities(void){return VELA_CAP_PLATFORM_ABI|VELA_CAP_HISTORY|VELA_CAP_SCROLL|VELA_CAP_LOCAL_HTML|VELA_CAP_ASTER_DOC|VELA_CAP_LINK_ACTIVATION|VELA_CAP_JS_SUBSET|VELA_CAP_FEATURE_PROFILE|VELA_CAP_RESOURCES;}uint64_t vela_platform_capabilities(void){return g_platform_ready?g_platform.capabilities:0;}void vela_set_features(uint32_t f){g_features=f;repaint();}uint32_t vela_features(void){return g_features;}
+int vela_init_ex(int w,const VelaPlatformOps*p,void*c){g_viewport=w>120?w:120;g_viewport_h=420;g_scroll=0;g_history_count=0;g_history_index=-1;g_features=VELA_PROFILE_FULL;seturl("");if(!vela_set_platform(p,c))return 0;cp(g_status,sizeof(g_status),"Ready / Aster Engine ");cat(g_status,sizeof(g_status),aster_version());startpage();return 1;}void vela_init(int w){VelaPlatformOps p;zero(&p,sizeof(p));p.abi_version=VELA_PLATFORM_ABI_VERSION;p.struct_size=sizeof(p);p.capabilities=VELA_PLATFORM_CAP_HTTP|VELA_PLATFORM_CAP_LOG|VELA_PLATFORM_CAP_RESOURCES;p.http_get=ohttp;p.resource_get=ores;p.log=olog;(void)vela_init_ex(w,&p,0);}
+void vela_set_viewport_size(int w,int h){if(w<120)w=120;if(h<80)h=80;int ch=w!=g_viewport;g_viewport=w;g_viewport_h=h;if(ch)aster_layout(&g_doc,g_viewport>40?g_viewport-40:g_viewport);vela_set_scroll(g_scroll);}void vela_set_viewport(int w){vela_set_viewport_size(w,g_viewport_h);}void vela_input_char(char c){if(g_url_len<(int)sizeof(g_url)-1){g_url[g_url_len++]=c;g_url[g_url_len]=0;repaint();}}void vela_backspace(void){if(g_url_len){g_url[--g_url_len]=0;repaint();}}
+int vela_load_url(const char*u){return nav(u,1);}int vela_go(void){return nav(g_url,1);}int vela_load_html(const char*h,const char*v){if(!h)return 0;cp(g_raw,sizeof(g_raw),h);seturl(v?v:"about:local");char r[VELA_URL_CAP],t[96];preprocess(r,sizeof(r),t,sizeof(t));parse();if(t[0])cp(g_doc.title,sizeof(g_doc.title),t);cp(g_status,sizeof(g_status),"Local document");hist(g_url);repaint();return 1;}int vela_can_back(void){return g_history_index>0;}int vela_can_forward(void){return g_history_index>=0&&g_history_index+1<g_history_count;}int vela_back(void){if(!vela_can_back())return 0;int x=g_history_index-1;char u[VELA_URL_CAP];cp(u,sizeof(u),g_history[x]);if(!nav(u,0))return 0;g_history_index=x;return 1;}int vela_forward(void){if(!vela_can_forward())return 0;int x=g_history_index+1;char u[VELA_URL_CAP];cp(u,sizeof(u),g_history[x]);if(!nav(u,0))return 0;g_history_index=x;return 1;}int vela_reload(void){return g_url[0]?nav(g_url,0):0;}
+int vela_activate_link(int x,int y){char h[VELA_URL_CAP];if(!aster_link_at(&g_doc,x,y,g_scroll,h,sizeof(h)))return 0;if(ci(h,"javascript:")){if(!(g_features&VELA_FEATURE_JAVASCRIPT)){cp(g_status,sizeof(g_status),"JavaScript disabled by profile");return 0;}char s[VELA_JS_TEXT_CAP],tmp[256];cp(s,sizeof(s),h+11);if(jscall(s,"console.log",tmp,sizeof(tmp)))logm(1,tmp);if(jsassign(s,"location.href",tmp,sizeof(tmp))){char u[VELA_URL_CAP];if(resolve(g_url,tmp,u,sizeof(u)))return nav(u,1);}cp(g_status,sizeof(g_status),"JavaScript link executed");repaint();return 1;}char t[VELA_URL_CAP];return resolve(g_url,h,t,sizeof(t))?nav(t,1):0;}
+int vela_resource_get(const char*r,uint8_t*d,size_t dc,size_t*n,char*t,size_t tc,char*s,size_t sc){if(n)*n=0;if(t&&tc)t[0]=0;if(s&&sc)s[0]=0;if(!r||!*r||!d||!dc)return 0;if(!g_platform_ready||!(g_platform.capabilities&VELA_PLATFORM_CAP_RESOURCES)||!g_platform.resource_get){if(s&&sc)cp(s,sc,"No resource backend installed");return 0;}char u[VELA_URL_CAP];if(!resolve(g_url,r,u,sizeof(u))||ci(u,"javascript:")){if(s&&sc)cp(s,sc,"Unsupported resource URL");return 0;}return g_platform.resource_get(g_platform_context,u,d,dc,n,t,tc,s,sc);}
+void vela_set_scroll(int y){int max=aster_document_height(&g_doc)-g_viewport_h+24;if(max<0)max=0;if(y<0)y=0;if(y>max)y=max;g_scroll=y;repaint();}void vela_scroll_by(int d){vela_set_scroll(g_scroll+d);}int vela_scroll(void){return g_scroll;}const char*vela_url(void){return g_url;}const char*vela_status(void){return g_status;}const char*vela_title(void){return g_doc.title[0]?g_doc.title:VELA_NAME;}const AsterDocument*vela_document(void){return &g_doc;}void vela_paint(int x,int y,int w,int h){vela_set_viewport_size(w,h);aster_paint(&g_doc,x+18,y+10,w-36,h-20,g_scroll);}
