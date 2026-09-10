@@ -12,10 +12,10 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi ca-certificates
       - name: Aster selector host smoke
         run: make aster-smoke
-      - name: Build boot media
+      - name: Build boot media with native TLS trust store
         run: |
           make all
           make iso
@@ -31,7 +31,7 @@ jobs:
         run: make iso-smoke
       - name: QEMU end-to-end disk installation test
         run: make install-smoke
-      - name: QEMU network HTTP smoke test
+      - name: QEMU network HTTP/TLS build smoke test
         run: make network-smoke
       - name: Prepare local-test firmware
         run: |
@@ -43,13 +43,13 @@ jobs:
       - name: Upload boot media
         uses: actions/upload-artifact@v4
         with:
-          name: UN_Orion-v0.0.7-multi-firmware-media
+          name: UN_Orion-v0.0.8-multi-firmware-media
           path: |
             build/orion.img
             build/orion-image.json
-            build/UN_Orion-v0.0.7-install.iso
+            build/UN_Orion-v0.0.8-install.iso
             build/orion-install.json
-            build/UN_Orion-v0.0.7-i686-bios.img
+            build/UN_Orion-v0.0.8-i686-bios.img
             build/orion-i686-bios.json
             build/OVMF_CODE.localtest.fd
             build/OVMF_VARS.localtest.fd
