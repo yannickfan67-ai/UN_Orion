@@ -1,5 +1,5 @@
 PROJECT := UN_Orion
-VERSION := 0.0.7
+VERSION := 0.0.8
 BUILD := build
 ESP := $(BUILD)/esp
 LEGACY := $(BUILD)/legacy-i686
@@ -7,12 +7,12 @@ LEGACY := $(BUILD)/legacy-i686
 CC := clang
 LD := ld.lld
 
-KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -DORION_ARCH_NAME=\"x86_64\"
+KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -I$(BUILD)/vendor/bearssl-0.6/inc -DORION_ARCH_NAME=\"x86_64\"
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
-KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/net_resource.c kernel/aster.c kernel/vela.c kernel/vela_image.c kernel/browser_image.c
+KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/net_resource.c kernel/tls.c kernel/libc.c kernel/aster.c kernel/vela.c kernel/vela_image.c kernel/browser_image.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
-I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -DORION_ARCH_NAME=\"i686\"
+I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -I$(BUILD)/vendor/bearssl-0.6/inc -DORION_ARCH_NAME=\"i686\"
 I686_LDFLAGS := -nostdlib -static -m elf_i386 -T kernel/i686/linker.ld
 I686_C_SRCS := $(filter-out kernel/interrupts.c,$(KERNEL_C_SRCS)) kernel/i686/interrupts.c kernel/i686/builtins.c
 I686_OBJS := $(patsubst kernel/%.c,$(LEGACY)/kernel/%.o,$(I686_C_SRCS)) $(LEGACY)/kernel/i686/entry.o $(LEGACY)/kernel/i686/arch.o
@@ -23,6 +23,40 @@ EFILDS := /usr/lib/elf_x86_64_efi.lds
 EFILIBDIR := /usr/lib
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd))
 OVMF_VARS ?= $(if $(findstring _4M,$(OVMF_CODE)),/usr/share/OVMF/OVMF_VARS_4M.fd,$(firstword $(wildcard /usr/share/OVMF/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS_4M.fd)))
+
+
+BEARSSL_SRC := $(BUILD)/vendor/bearssl-0.6
+BEARSSL_STAMP := $(BEARSSL_SRC)/.orion-ready
+BEARSSL_X64 := $(BUILD)/libbearssl-x64.a
+BEARSSL_I686 := $(BUILD)/libbearssl-i686.a
+TLS_CA_BUNDLE ?= /etc/ssl/certs/ca-certificates.crt
+TLS_ANCHORS := $(BUILD)/generated/orion_trust_anchors.c
+
+$(BEARSSL_STAMP): tools/fetch_bearssl.py | $(BUILD)
+	python3 tools/fetch_bearssl.py $(BUILD)/vendor
+
+$(TLS_ANCHORS): $(BEARSSL_STAMP) | $(BUILD)
+	test -r "$(TLS_CA_BUNDLE)"
+	$(MAKE) -C $(BEARSSL_SRC) build/brssl CC=cc LD=cc
+	mkdir -p $(BUILD)/generated
+	$(BEARSSL_SRC)/build/brssl ta "$(TLS_CA_BUNDLE)" > $@
+	test -s $@
+
+$(BEARSSL_X64): $(BEARSSL_STAMP)
+	rm -rf $(BUILD)/bearssl-x64 && mkdir -p $(BUILD)/bearssl-x64
+	@set -e; for f in $$(find $(BEARSSL_SRC)/src -type f -name '*.c' | sort); do \
+		o=$(BUILD)/bearssl-x64/$$(echo "$${f#$(BEARSSL_SRC)/}" | tr '/.' '__').o; \
+		$(CC) $(KERNEL_CFLAGS) -I$(BEARSSL_SRC)/src -Wno-unused-parameter -c "$$f" -o "$$o"; \
+	done
+	llvm-ar rcs $@ $(BUILD)/bearssl-x64/*.o
+
+$(BEARSSL_I686): $(BEARSSL_STAMP)
+	rm -rf $(BUILD)/bearssl-i686 && mkdir -p $(BUILD)/bearssl-i686
+	@set -e; for f in $$(find $(BEARSSL_SRC)/src -type f -name '*.c' | sort); do \
+		o=$(BUILD)/bearssl-i686/$$(echo "$${f#$(BEARSSL_SRC)/}" | tr '/.' '__').o; \
+		$(CC) $(I686_CFLAGS) -I$(BEARSSL_SRC)/src -Wno-unused-parameter -c "$$f" -o "$$o"; \
+	done
+	llvm-ar rcs $@ $(BUILD)/bearssl-i686/*.o
 
 .PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke legacy-i686 legacy-smoke aster-smoke
 all: image
@@ -43,10 +77,13 @@ $(BUILD)/generated/.fontstamp: tools/fontgen.py | $(BUILD)
 $(BUILD)/%.o: kernel/%.c include/bootinfo.h $(BUILD)/generated/.fontstamp | $(BUILD)
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
+$(BUILD)/tls.o: kernel/tls.c $(TLS_ANCHORS) $(BEARSSL_STAMP) | $(BUILD)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
 $(BUILD)/arch.o: kernel/arch.S | $(BUILD)
 	$(CC) -target x86_64-unknown-none -ffreestanding -c $< -o $@
 
-$(BUILD)/kernel.elf: $(KERNEL_OBJS)
+$(BUILD)/kernel.elf: $(KERNEL_OBJS) $(BEARSSL_X64)
 	$(LD) $(KERNEL_LDFLAGS) $^ -o $@
 
 $(BUILD)/boot.o: boot/main.c include/bootinfo.h | $(BUILD)
@@ -88,6 +125,10 @@ $(LEGACY)/kernel/%.o: kernel/%.c include/bootinfo.h $(BUILD)/generated/.fontstam
 	mkdir -p $(@D)
 	$(CC) $(I686_CFLAGS) -c $< -o $@
 
+$(LEGACY)/kernel/tls.o: kernel/tls.c $(TLS_ANCHORS) $(BEARSSL_STAMP) | $(LEGACY)
+	mkdir -p $(@D)
+	$(CC) $(I686_CFLAGS) -c $< -o $@
+
 $(LEGACY)/kernel/i686/entry.o: kernel/i686/entry.S | $(LEGACY)
 	mkdir -p $(@D)
 	$(CC) -target i386-unknown-none -march=i686 -ffreestanding -c $< -o $@
@@ -96,8 +137,8 @@ $(LEGACY)/kernel/i686/arch.o: kernel/i686/arch.S | $(LEGACY)
 	mkdir -p $(@D)
 	$(CC) -target i386-unknown-none -march=i686 -ffreestanding -c $< -o $@
 
-$(LEGACY)/kernel32.elf: $(I686_OBJS) kernel/i686/linker.ld
-	$(LD) $(I686_LDFLAGS) $(I686_OBJS) -o $@
+$(LEGACY)/kernel32.elf: $(I686_OBJS) $(BEARSSL_I686) kernel/i686/linker.ld
+	$(LD) $(I686_LDFLAGS) $(I686_OBJS) $(BEARSSL_I686) -o $@
 
 $(LEGACY)/kernel32.bin: $(LEGACY)/kernel32.elf
 	llvm-objcopy -O binary $< $@

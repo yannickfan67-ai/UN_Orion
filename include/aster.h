@@ -2,7 +2,7 @@
 #define ORION_ASTER_H
 #include <stdint.h>
 #include <stddef.h>
-#define ASTER_VERSION "0.3.1"
+#define ASTER_VERSION "0.3.2"
 #define ASTER_API_MAJOR 1u
 #define ASTER_API_MINOR 3u
 #define ASTER_API_VERSION ((ASTER_API_MAJOR << 16) | ASTER_API_MINOR)
