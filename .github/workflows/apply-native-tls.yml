@@ -20,6 +20,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git restore -- .github/workflows/build.yml
           git add -A
           git commit -m "net: add validated native TLS 1.2 and HTTPS [native-tls-applied]"
           git push origin HEAD:feat/native-tls-https-20260910
