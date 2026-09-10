@@ -37,7 +37,7 @@ $(BEARSSL_STAMP): tools/fetch_bearssl.py | $(BUILD)
 
 $(TLS_ANCHORS): $(BEARSSL_STAMP) | $(BUILD)
 	test -r "$(TLS_CA_BUNDLE)"
-	$(MAKE) -C $(BEARSSL_SRC) build/brssl CC=cc LD=cc
+	$(MAKE) -C $(BEARSSL_SRC) BUILD=build CC=cc LD=cc build/brssl
 	mkdir -p $(BUILD)/generated
 	$(BEARSSL_SRC)/build/brssl ta "$(TLS_CA_BUNDLE)" > $@
 	test -s $@
