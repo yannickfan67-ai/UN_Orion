@@ -1,0 +1,23 @@
+name: apply-native-tls
+on:
+  push:
+    branches: [feat/native-tls-https-20260910]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[native-tls-applied]') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/native-tls-https-20260910
+      - name: Apply patch
+        run: python3 tools/apply_tls_patch.py
+      - name: Commit generated source changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "net: add validated native TLS 1.2 and HTTPS [native-tls-applied]"
+          git push origin HEAD:feat/native-tls-https-20260910
