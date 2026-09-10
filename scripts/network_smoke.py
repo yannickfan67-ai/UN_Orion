@@ -56,7 +56,10 @@ def make_test_ca(td):
         stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     run('openssl','req','-new','-newkey','rsa:2048','-sha256','-nodes','-subj','/CN=10.0.2.2',
         '-keyout',str(leaf_key),'-out',str(csr),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    ext.write_text('basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=IP:10.0.2.2\n',encoding='ascii')
+    # BearSSL 0.6 minimal validates dNSName SANs and otherwise falls back to CN.
+    # It does not match iPAddress SAN entries, so this literal-IP CI certificate
+    # deliberately has no SAN extension. Real HTTPS domain names use dNSName SAN.
+    ext.write_text('basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n',encoding='ascii')
     run('openssl','x509','-req','-in',str(csr),'-CA',str(ca_crt),'-CAkey',str(ca_key),'-CAcreateserial',
         '-days','2','-sha256','-extfile',str(ext),'-out',str(leaf_crt),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     return ca_crt,leaf_crt,leaf_key
@@ -85,7 +88,7 @@ with tempfile.TemporaryDirectory(prefix='orion-tls-net-') as tmp:
         encoding='utf-8')
     http_srv=serve_http(); https_srv=serve_https(site,leaf_crt,leaf_key)
     vars_fd=td/'vars.fd'; shutil.copyfile(vars_template,vars_fd); serial=td/'serial.log'; mon=td/'mon.sock'
-    qemu=subprocess.Popen(['qemu-system-x86_64','-machine','q35','-m','256M',
+    qemu=subprocess.Popen(['qemu-system-x86_64','-machine','q35','-cpu','max','-m','256M',
         '-drive',f'if=pflash,format=raw,readonly=on,file={code}',
         '-drive',f'if=pflash,format=raw,file={vars_fd}',
         '-drive',f'format=raw,file={img}',
@@ -109,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix='orion-tls-net-') as tmp:
             if ('HTTP test success' in text and 'VELA: title CI Orion HTTPS' in text
                 and 'HTTP: redirect https://10.0.2.2:18443/final.html' in text
                 and 'TLS: verified HTTPS session' in text and 'HTTP: markup response received' in text):
-                print('UN_Orion HTTPS smoke passed: RTL8139 -> HTTP 302 -> TLS 1.2 + CA/IP/time validation -> UN_Vela -> Aster')
+                print('UN_Orion HTTPS smoke passed: RTL8139 -> HTTP 302 -> TLS 1.2 + CA/name/time validation -> UN_Vela -> Aster')
                 sys.exit(0)
             time.sleep(.1)
         raise RuntimeError('HTTPS/browser smoke timeout: '+(serial.read_text(errors='ignore')[-2200:] if serial.exists() else ''))
