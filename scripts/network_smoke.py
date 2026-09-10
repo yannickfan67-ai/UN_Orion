@@ -111,7 +111,8 @@ with tempfile.TemporaryDirectory(prefix='orion-tls-net-') as tmp:
             if 'HTTP test failed' in text: raise RuntimeError(text[-2200:])
             if ('HTTP test success' in text and 'VELA: title CI Orion HTTPS' in text
                 and 'HTTP: redirect https://10.0.2.2:18443/final.html' in text
-                and 'TLS: verified HTTPS session' in text and 'HTTP: markup response received' in text):
+                and 'TLS: verified HTTPS session' in text
+                and 'HTTPS: verified markup response received' in text):
                 print('UN_Orion HTTPS smoke passed: RTL8139 -> HTTP 302 -> TLS 1.2 + CA/name/time validation -> UN_Vela -> Aster')
                 sys.exit(0)
             time.sleep(.1)
