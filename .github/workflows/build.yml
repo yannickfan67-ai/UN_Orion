@@ -12,7 +12,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi ca-certificates
+          sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi ca-certificates openssl
       - name: Aster selector host smoke
         run: make aster-smoke
       - name: Build boot media with native TLS trust store
@@ -31,7 +31,7 @@ jobs:
         run: make iso-smoke
       - name: QEMU end-to-end disk installation test
         run: make install-smoke
-      - name: QEMU network HTTP/TLS build smoke test
+      - name: QEMU verified HTTPS browser smoke test
         run: make network-smoke
       - name: Prepare local-test firmware
         run: |
