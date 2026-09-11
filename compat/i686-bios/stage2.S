@@ -49,8 +49,8 @@ _start:
     popw %cx
     loop 1b
 
-    # Obtain a linear 32-bit framebuffer. SeaVGABIOS/Bochs VBE exposes
-    # 32-bpp modes in the 0x14x range; real VBE BIOSes may use 0x11x.
+    # Prefer the existing 32-bpp SeaVGABIOS/Bochs modes, then fall back to
+    # standard VBE RGB565 modes used by Cirrus GD5446-class adapters.
     movw $0x144,%cx
     call try_vbe
     jnc vbe_ok
@@ -60,10 +60,13 @@ _start:
     movw $0x142,%cx
     call try_vbe
     jnc vbe_ok
-    movw $0x118,%cx
+    movw $0x117,%cx          # 1024x768x16 RGB565
     call try_vbe
     jnc vbe_ok
-    movw $0x115,%cx
+    movw $0x114,%cx          # 800x600x16 RGB565
+    call try_vbe
+    jnc vbe_ok
+    movw $0x111,%cx          # 640x480x16 RGB565
     call try_vbe
     jnc vbe_ok
     jmp vbe_fail
@@ -138,9 +141,17 @@ pitch_ready:
     jnz pitch2_ready
     movzwl VBE_BUF+16,%eax
 pitch2_ready:
+    cmpb $16,VBE_BUF+25
+    jne pitch32
+    shrl $1,%eax
+    movl %eax,BOOTINFO_BUF+24
+    movl $0x100,BOOTINFO_BUF+28   # ORION_PIXEL_FORMAT_RGB565
+    jmp format_ready
+pitch32:
     shrl $2,%eax
     movl %eax,BOOTINFO_BUF+24
-    movl $1,BOOTINFO_BUF+28
+    movl $1,BOOTINFO_BUF+28       # BGR byte order used by current 32-bpp VBE modes
+format_ready:
     movl $MEMDESC_BUF,BOOTINFO_BUF+32
     movl $0,BOOTINFO_BUF+36
     movl $40,BOOTINFO_BUF+40
@@ -161,7 +172,8 @@ pitch2_ready:
     movl %eax,%cr0
     ljmpl $0x08,$pm_entry
 
-# CX = VBE mode. CF clear on success.
+# CX = VBE mode. CF clear on success. Accept 32-bpp linear modes or standard
+# 16-bpp RGB565 linear modes (5:6:5 at bit positions 11:5:0).
 try_vbe:
     pushw %cx
     xorw %ax,%ax
@@ -174,7 +186,22 @@ try_vbe:
     testw $0x0080,VBE_BUF+0
     jz 1f
     cmpb $32,VBE_BUF+25
+    je 3f
+    cmpb $16,VBE_BUF+25
     jne 1f
+    cmpb $5,VBE_BUF+31
+    jne 1f
+    cmpb $11,VBE_BUF+32
+    jne 1f
+    cmpb $6,VBE_BUF+33
+    jne 1f
+    cmpb $5,VBE_BUF+34
+    jne 1f
+    cmpb $5,VBE_BUF+35
+    jne 1f
+    cmpb $0,VBE_BUF+36
+    jne 1f
+3:
     popw %cx
     movw %cx,%bx
     orw $0x4000,%bx
@@ -340,4 +367,4 @@ head_count: .word 2
 current_lba: .word 0
 msg_disk: .asciz "UN_Orion i686: disk read failed\r\n"
 msg_hdr:  .asciz "UN_Orion i686: kernel header invalid\r\n"
-msg_vbe:  .asciz "UN_Orion i686: VBE 32-bit framebuffer unavailable\r\n"
+msg_vbe:  .asciz "UN_Orion i686: no supported linear 32/16-bit VBE framebuffer\r\n"
