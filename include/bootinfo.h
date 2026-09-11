@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+/* Custom BIOS framebuffer format used by the Legacy VBE path. */
+#define ORION_PIXEL_FORMAT_RGB565 0x100u
+
 typedef struct {
     uint64_t framebuffer_base;
     uint64_t framebuffer_size;
