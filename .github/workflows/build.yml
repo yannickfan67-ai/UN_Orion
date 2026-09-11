@@ -39,7 +39,7 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then exit "$rc"; fi
-          grep -q "UN_Orion 0.0.8 alive" build/serial-i686-hdd.log
+          grep -q "UN_Orion 0.0.9 alive" build/serial-i686-hdd.log
           grep -q "PMM ready" build/serial-i686-hdd.log
           grep -q "Orion desktop ready" build/serial-i686-hdd.log
           grep -q "Network stack ready" build/serial-i686-hdd.log
@@ -60,13 +60,13 @@ jobs:
       - name: Upload boot media
         uses: actions/upload-artifact@v4
         with:
-          name: UN_Orion-v0.0.8-multi-firmware-media
+          name: UN_Orion-v0.0.9-multi-firmware-media
           path: |
             build/orion.img
             build/orion-image.json
-            build/UN_Orion-v0.0.8-install.iso
+            build/UN_Orion-v0.0.9-install.iso
             build/orion-install.json
-            build/UN_Orion-v0.0.8-i686-bios.img
+            build/UN_Orion-v0.0.9-i686-bios.img
             build/orion-i686-bios.json
             build/OVMF_CODE.localtest.fd
             build/OVMF_VARS.localtest.fd
