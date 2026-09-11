@@ -27,6 +27,23 @@ jobs:
         run: make smoke
       - name: QEMU i686 Legacy BIOS full-system smoke test
         run: make legacy-smoke
+      - name: QEMU i686 Legacy BIOS hard-disk smoke test
+        run: |
+          img="$(ls build/UN_Orion-v*-i686-bios.img | head -n1)"
+          rm -f build/serial-i686-hdd.log
+          set +e
+          timeout 15s qemu-system-i386 -machine pc -m 128M \
+            -drive if=ide,index=0,media=disk,format=raw,file="$img" -boot c \
+            -netdev user,id=n0 -device rtl8139,netdev=n0,romfile= \
+            -display none -monitor none -serial file:build/serial-i686-hdd.log
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then exit "$rc"; fi
+          grep -q "UN_Orion 0.0.8 alive" build/serial-i686-hdd.log
+          grep -q "PMM ready" build/serial-i686-hdd.log
+          grep -q "Orion desktop ready" build/serial-i686-hdd.log
+          grep -q "Network stack ready" build/serial-i686-hdd.log
+          echo "i686 Legacy BIOS hard-disk smoke test passed"
       - name: QEMU UEFI install ISO smoke test
         run: make iso-smoke
       - name: QEMU end-to-end disk installation test

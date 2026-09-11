@@ -16,6 +16,7 @@ _start:
     movw $0x7b00,%sp
     sti
     movb %dl,boot_drive
+    call disk_init
 
     # Read the one-sector Orion i686 kernel header (LBA 17).
     movw $17,current_lba
@@ -29,7 +30,7 @@ _start:
     cmpw $0x324b,%es:2       # "K2"
     jne header_fail
 
-    # Load the raw i686 kernel to 0x10000, one floppy sector at a time.
+    # Load the raw i686 kernel to 0x10000, one sector at a time.
     movw %es:8,%cx           # sector count
     testw %cx,%cx
     jz header_fail
@@ -189,25 +190,80 @@ try_vbe:
     stc
     ret
 
-# Read current_lba into ES:BX using 1.44 MiB geometry (18 spt, 2 heads).
+# Detect INT 13h Extensions for HDDs and cache BIOS CHS geometry as a fallback.
+disk_init:
+    movb $0,edd_ok
+    movw $18,sectors_per_track
+    movw $2,head_count
+
+    movb boot_drive,%dl
+    cmpb $0x80,%dl
+    jb 1f
+    movw $0x55aa,%bx
+    movb $0x41,%ah
+    int $0x13
+    jc 1f
+    cmpw $0xaa55,%bx
+    jne 1f
+    testw $1,%cx
+    jz 1f
+    movb $1,edd_ok
+
+1:
+    # AH=08 geometry makes the CHS fallback valid for both floppy and HDD media.
+    movb boot_drive,%dl
+    movb $0x08,%ah
+    int $0x13
+    jc 2f
+    movzbw %cl,%ax
+    andw $0x003f,%ax
+    testw %ax,%ax
+    jz 2f
+    movw %ax,sectors_per_track
+    movzbw %dh,%ax
+    incw %ax
+    movw %ax,head_count
+2:
+    ret
+
+# Read current_lba into ES:BX. HDDs use EDD/LBA first; CHS is a fallback.
 read_one:
     pusha
+    cmpb $0,edd_ok
+    je 1f
+
+    movw %bx,dap+4
+    movw %es,%ax
+    movw %ax,dap+6
+    movw current_lba,%ax
+    movw %ax,dap+8
+    movw $0,dap+10
+    movl $0,dap+12
+    movw $dap,%si
+    movb boot_drive,%dl
+    movb $0x42,%ah
+    int $0x13
+    jnc 2f
+
+1:
+    # CHS fallback using geometry reported by this BIOS, not floppy constants.
     movw current_lba,%ax
     xorw %dx,%dx
-    movw $36,%si
-    divw %si
-    movb %al,%ch
-    movw %dx,%ax
+    divw sectors_per_track
+    movw %dx,%cx
+    incw %cx
     xorw %dx,%dx
-    movw $18,%si
-    divw %si
-    movb %al,%dh
-    movb %dl,%cl
-    incb %cl
+    divw head_count
+    movb %dl,%dh
+    movb %al,%ch
+    andb $0x03,%ah
+    shlb $6,%ah
+    orb %ah,%cl
     movb boot_drive,%dl
     movb $0x02,%ah
     movb $1,%al
     int $0x13
+2:
     popa
     ret
 
@@ -257,6 +313,16 @@ pm_entry:
     movl $0x00100000,%eax
     jmp *%eax
 
+.code16
+.align 4
+dap:
+    .byte 0x10,0
+    .word 1
+    .word 0
+    .word 0
+    .long 0
+    .long 0
+
 .align 8
 gdt:
     .quad 0x0000000000000000
@@ -268,6 +334,9 @@ gdt_desc:
     .long gdt
 
 boot_drive: .byte 0
+edd_ok: .byte 0
+sectors_per_track: .word 18
+head_count: .word 2
 current_lba: .word 0
 msg_disk: .asciz "UN_Orion i686: disk read failed\r\n"
 msg_hdr:  .asciz "UN_Orion i686: kernel header invalid\r\n"
