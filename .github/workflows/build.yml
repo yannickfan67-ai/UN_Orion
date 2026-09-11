@@ -44,6 +44,23 @@ jobs:
           grep -q "Orion desktop ready" build/serial-i686-hdd.log
           grep -q "Network stack ready" build/serial-i686-hdd.log
           echo "i686 Legacy BIOS hard-disk smoke test passed"
+      - name: QEMU i686 Cirrus VBE RGB565 smoke test
+        run: |
+          img="$(ls build/UN_Orion-v*-i686-bios.img | head -n1)"
+          rm -f build/serial-i686-cirrus.log
+          set +e
+          timeout 15s qemu-system-i386 -machine pc -m 128M -vga cirrus \
+            -drive if=ide,index=0,media=disk,format=raw,file="$img" -boot c \
+            -netdev user,id=n0 -device rtl8139,netdev=n0,romfile= \
+            -display none -monitor none -serial file:build/serial-i686-cirrus.log
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then exit "$rc"; fi
+          cat build/serial-i686-cirrus.log
+          grep -q "UN_Orion 0.0.9 alive" build/serial-i686-cirrus.log
+          grep -q "Framebuffer RGB565 ready" build/serial-i686-cirrus.log
+          grep -q "Orion desktop ready" build/serial-i686-cirrus.log
+          echo "i686 Cirrus VBE RGB565 smoke test passed"
       - name: QEMU UEFI install ISO smoke test
         run: make iso-smoke
       - name: QEMU end-to-end disk installation test
