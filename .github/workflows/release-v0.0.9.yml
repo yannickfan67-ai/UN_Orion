@@ -1,0 +1,66 @@
+name: publish-v0.0.9
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-v0.0.9.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download verified main v0.0.9 media
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release
+          gh run download 34655868976 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name UN_Orion-v0.0.9-multi-firmware-media \
+            --dir release
+
+      - name: Prepare v0.0.9 assets
+        run: |
+          cd release
+          mv orion.img UN_Orion-v0.0.9-x86_64-uefi.img
+          mv orion-image.json orion-image-x86_64.json
+          mv orion-i686-bios.json orion-image-i686.json
+          mv orion-install.json orion-install-x86_64.json
+          rm -f OVMF_CODE.localtest.fd OVMF_VARS.localtest.fd
+          sha256sum \
+            UN_Orion-v0.0.9-x86_64-uefi.img \
+            UN_Orion-v0.0.9-i686-bios.img \
+            UN_Orion-v0.0.9-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            > SHA256SUMS.txt
+
+      - name: Publish v0.0.9
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd release
+          gh release create v0.0.9 \
+            UN_Orion-v0.0.9-x86_64-uefi.img \
+            UN_Orion-v0.0.9-i686-bios.img \
+            UN_Orion-v0.0.9-install.iso \
+            orion-image-x86_64.json \
+            orion-image-i686.json \
+            orion-install-x86_64.json \
+            SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 263b773a3087e07d7eb8e590807b5c4da49debee \
+            --title 'UN_Orion v0.0.9 i686 HDD Boot Hotfix' \
+            --notes 'UN_Orion v0.0.9 is a hotfix release for Legacy BIOS i686 booting from hard-disk media, including v86/SeaBIOS-style IDE disk use. The i686 stage2 loader now prefers INT 13h Extensions / LBA reads on BIOS hard disks and falls back to BIOS-reported CHS geometry instead of assuming 1.44 MiB floppy geometry. This fixes the v0.0.8 failure that could stop at “UN_Orion i686: disk read failed” when the i686 image was attached as a hard disk. Floppy boot compatibility is retained. CI now validates both floppy and IDE hard-disk i686 boot paths. The release also retains the v0.0.8 native validated TLS 1.2 / HTTPS stack, compact dynamically sized UEFI FAT media, approximately 4 MiB installer ISO, x86_64 UEFI boot, end-to-end installation, and verified HTTPS browser smoke coverage. All release media come from main build #195, where x86_64 UEFI, i686 floppy, i686 IDE hard disk, ISO boot, disk install, and HTTPS tests all passed.'
+
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.0.9 --repo "$GITHUB_REPOSITORY" --json tagName,name,url,assets
+          test "$(gh api repos/$GITHUB_REPOSITORY/releases/tags/v0.0.9 --jq '.assets | length')" -eq 7
