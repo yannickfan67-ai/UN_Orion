@@ -23,6 +23,7 @@ __attribute__((noreturn)) void kernel_main(OrionBootInfo *bi){
     net_init();
     serial_write(net_ready()?"Network stack ready\r\n":"Network adapter unavailable\r\n");
     if(gfx_ready()){
+        serial_write(bi&&bi->pixel_format==ORION_PIXEL_FORMAT_RGB565?"Framebuffer RGB565 ready\r\n":"Framebuffer 32-bit ready\r\n");
         desktop_init(bi);
         serial_write("Orion desktop ready\r\n");
     }
