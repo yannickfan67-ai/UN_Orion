@@ -1,5 +1,5 @@
 PROJECT := UN_Orion
-VERSION := 0.0.8
+VERSION := 0.0.9
 BUILD := build
 ESP := $(BUILD)/esp
 LEGACY := $(BUILD)/legacy-i686
