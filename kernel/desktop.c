@@ -93,7 +93,11 @@ static void draw_start_menu(void){
     gfx_line_h(x+14,y+382,w-28,0x314255);gfx_text(x+24,y+389,"Shut down",0xD5A0AA,1);
 }
 static void draw_window_frame(int app){
-    Window *w=&wins[app];if(!w->open||w->minimized)return;gfx_rect(w->x+7,w->y+8,w->w,w->h,0x07101A);gfx_rect(w->x,w->y,w->w,w->h,0xEDF1F5);gfx_rect(w->x,w->y,w->w,TITLE_H,active_app==app?0x15283D:0x26313E);gfx_text(w->x+16,w->y+7,w->title,0xF0F5FA,1);gfx_rect(w->x+w->w-40,w->y+5,34,31,inside(mouse_x,mouse_y,w->x+w->w-40,w->y+5,34,31)?0xA94052:0x263747);gfx_text(w->x+w->w-29,w->y+5,"x",0xF8EDF0,1);gfx_line_h(w->x,w->y+TITLE_H,w->w,0xC5CED8);
+    Window *w=&wins[app];if(!w->open||w->minimized)return;
+    gfx_rect(w->x+7,w->y+8,w->w,w->h,0x07101A);
+    gfx_rect(w->x,w->y,w->w,TITLE_H,active_app==app?0x15283D:0x26313E);
+    gfx_rect(w->x,w->y+TITLE_H,w->w,1,0xC5CED8);gfx_rect(w->x,w->y,1,w->h,0xC5CED8);gfx_rect(w->x+w->w-1,w->y,1,w->h,0xC5CED8);gfx_rect(w->x,w->y+w->h-1,w->w,1,0xC5CED8);
+    gfx_text(w->x+16,w->y+7,w->title,0xF0F5FA,1);gfx_rect(w->x+w->w-40,w->y+5,34,31,inside(mouse_x,mouse_y,w->x+w->w-40,w->y+5,34,31)?0xA94052:0x263747);gfx_text(w->x+w->w-29,w->y+5,"x",0xF8EDF0,1);
 }
 static void term_push(const char*s){int row;if(term_count<TERM_LINES)row=term_count++;else{for(int i=0;i<TERM_LINES-1;i++)for(int j=0;j<TERM_LEN;j++)term_lines[i][j]=term_lines[i+1][j];row=TERM_LINES-1;}int j=0;while(s&&*s&&j<TERM_LEN-1)term_lines[row][j++]=*s++;term_lines[row][j]=0;}
 static void draw_terminal(Window*w){int bx=w->x+1,by=w->y+TITLE_H+1,bw=w->w-2,bh=w->h-TITLE_H-2;gfx_rect(bx,by,bw,bh,0x0A1018);gfx_text(bx+18,by+14,"Orion Terminal",0x7FB9F4,1);gfx_text_right(bx+bw-18,by+14,"shell",0x5E748B);int y=by+48;for(int i=0;i<term_count;i++,y+=23)gfx_text(bx+18,y,term_lines[i],0xAABBCD,1);gfx_rect(bx+14,by+bh-42,bw-28,30,0x0E1722);gfx_text(bx+21,by+bh-39,"orion >",0x65AFFF,1);gfx_text(bx+116,by+bh-39,term_cmd,0xE6EEF6,1);}
@@ -150,7 +154,7 @@ void desktop_key_scancode(uint8_t s){
     char c=s<128?(shift_down?shift_map[s]:normal_map[s]):0;if(c)key_ascii(c);
 }
 void desktop_mouse_byte(uint8_t b){if(mpkt_i==0&&!(b&0x08))return;int need=mouse_packet_size();if(need!=4)need=3;mpkt[mpkt_i++]=b;if(mpkt_i>=need){mpkt_i=0;handle_mouse_packet();}}
-void desktop_tick(void){uint64_t sec=timer_frequency()?timer_ticks()/timer_frequency():0;if(sec!=last_second){last_second=sec;redraw();}}
+void desktop_tick(void){uint64_t sec=timer_frequency()?timer_ticks()/timer_frequency():0;if(sec!=last_second){last_second=sec;cursor_restore();draw_taskbar();cursor_refresh();}}
 void desktop_init(OrionBootInfo *bi){
     g_bi=bi;(void)g_bi;wins[APP_TERMINAL]=(Window){280,130,720,480,1,0,11,"Terminal"};wins[APP_FILES]=(Window){230,115,700,440,0,0,2,"Files"};wins[APP_NOTES]=(Window){330,125,610,480,0,0,3,"Notes"};wins[APP_PAINT]=(Window){250,90,760,560,0,0,4,"Paint"};wins[APP_BROWSER]=(Window){220,85,820,590,0,0,5,"UN_Vela"};wins[APP_NETWORK]=(Window){345,135,620,430,0,0,6,"Network"};wins[APP_ABOUT]=(Window){380,165,540,380,0,0,7,"About UN_Orion"};active_app=APP_TERMINAL;ztop=11;vela_init(wins[APP_BROWSER].w-2);term_push("Welcome to UN_Orion Desktop " VERSION ".");term_push("UN_Vela " VELA_VERSION " uses Aster Engine " ASTER_VERSION ".");term_push("Type 'help' for terminal commands.");redraw();
 }

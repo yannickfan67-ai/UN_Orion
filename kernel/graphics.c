@@ -4,8 +4,11 @@
 #include "traf_font_22.h"
 #include "traf_display_44.h"
 static OrionBootInfo *g_bi;
+
+static int rgb565_mode(void){return g_bi&&g_bi->pixel_format==ORION_PIXEL_FORMAT_RGB565;}
 static uint32_t pack_pixel(uint32_t rgb){
     uint32_t r=(rgb>>16)&255,g=(rgb>>8)&255,b=rgb&255;
+    if(rgb565_mode())return ((r>>3)<<11)|((g>>2)<<5)|(b>>3);
     return g_bi->pixel_format==0 ? (b<<16)|(g<<8)|r : (r<<16)|(g<<8)|b;
 }
 void gfx_init(OrionBootInfo *bi){g_bi=bi;}
@@ -14,26 +17,50 @@ uint32_t gfx_width(void){return g_bi?g_bi->width:0;}
 uint32_t gfx_height(void){return g_bi?g_bi->height:0;}
 void gfx_pixel(uint32_t x,uint32_t y,uint32_t c){
     if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return;
-    volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
-    fb[(uint64_t)y*g_bi->pixels_per_scanline+x]=pack_pixel(c);
+    uint64_t off=(uint64_t)y*g_bi->pixels_per_scanline+x;
+    if(rgb565_mode()){
+        volatile uint16_t *fb=(volatile uint16_t*)(uintptr_t)g_bi->framebuffer_base;
+        fb[off]=(uint16_t)pack_pixel(c);
+    }else{
+        volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
+        fb[off]=pack_pixel(c);
+    }
 }
 uint32_t gfx_get_raw(uint32_t x,uint32_t y){
     if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return 0;
+    uint64_t off=(uint64_t)y*g_bi->pixels_per_scanline+x;
+    if(rgb565_mode()){
+        volatile uint16_t *fb=(volatile uint16_t*)(uintptr_t)g_bi->framebuffer_base;
+        return fb[off];
+    }
     volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
-    return fb[(uint64_t)y*g_bi->pixels_per_scanline+x];
+    return fb[off];
 }
 void gfx_put_raw(uint32_t x,uint32_t y,uint32_t raw){
     if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return;
-    volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
-    fb[(uint64_t)y*g_bi->pixels_per_scanline+x]=raw;
+    uint64_t off=(uint64_t)y*g_bi->pixels_per_scanline+x;
+    if(rgb565_mode()){
+        volatile uint16_t *fb=(volatile uint16_t*)(uintptr_t)g_bi->framebuffer_base;
+        fb[off]=(uint16_t)raw;
+    }else{
+        volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base;
+        fb[off]=raw;
+    }
 }
 void gfx_rect(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t c){
     if(!gfx_ready()||x>=g_bi->width||y>=g_bi->height)return;
     if(x+w>g_bi->width)w=g_bi->width-x; if(y+h>g_bi->height)h=g_bi->height-y;
     uint32_t pc=pack_pixel(c);
-    for(uint32_t yy=0;yy<h;yy++){
-        volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base+(uint64_t)(y+yy)*g_bi->pixels_per_scanline+x;
-        for(uint32_t xx=0;xx<w;xx++)fb[xx]=pc;
+    if(rgb565_mode()){
+        for(uint32_t yy=0;yy<h;yy++){
+            volatile uint16_t *fb=(volatile uint16_t*)(uintptr_t)g_bi->framebuffer_base+(uint64_t)(y+yy)*g_bi->pixels_per_scanline+x;
+            for(uint32_t xx=0;xx<w;xx++)fb[xx]=(uint16_t)pc;
+        }
+    }else{
+        for(uint32_t yy=0;yy<h;yy++){
+            volatile uint32_t *fb=(volatile uint32_t*)(uintptr_t)g_bi->framebuffer_base+(uint64_t)(y+yy)*g_bi->pixels_per_scanline+x;
+            for(uint32_t xx=0;xx<w;xx++)fb[xx]=pc;
+        }
     }
 }
 void gfx_line_h(uint32_t x,uint32_t y,uint32_t w,uint32_t c){gfx_rect(x,y,w,1,c);}
