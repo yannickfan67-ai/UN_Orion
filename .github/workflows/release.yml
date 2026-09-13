@@ -31,6 +31,8 @@ jobs:
           make dhcp-smoke
           make aster-smoke
           mkdir -p build
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/dhcp.c tests/dhcp_timeout_smoke.c -o build/dhcp-timeout-smoke
+          ./build/dhcp-timeout-smoke
           clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/pmm.c tests/pmm_recycle_smoke.c -o build/pmm-recycle-smoke
           ./build/pmm-recycle-smoke
 
