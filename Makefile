@@ -9,7 +9,7 @@ LD := ld.lld
 
 KERNEL_CFLAGS := -target x86_64-unknown-none -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -I$(BUILD)/vendor/bearssl-0.6/inc -DORION_ARCH_NAME=\"x86_64\"
 KERNEL_LDFLAGS := -nostdlib -static -T kernel/linker.ld
-KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/net_resource.c kernel/tls.c kernel/libc.c kernel/aster.c kernel/vela.c kernel/vela_image.c kernel/browser_image.c
+KERNEL_C_SRCS := kernel/main.c kernel/serial.c kernel/graphics.c kernel/interrupts.c kernel/pmm.c kernel/desktop.c kernel/pci.c kernel/netdev.c kernel/netdev_rtl8139.c kernel/netdev_pcnet.c kernel/netdev_e1000.c kernel/netdev_virtio.c kernel/net.c kernel/dhcp.c kernel/net_resource.c kernel/tls.c kernel/libc.c kernel/aster.c kernel/vela.c kernel/vela_image.c kernel/browser_image.c
 KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(KERNEL_C_SRCS)) $(BUILD)/arch.o
 
 I686_CFLAGS := -target i386-unknown-none -march=i686 -ffreestanding -fno-stack-protector -fno-pic -fno-builtin -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -O2 -Iinclude -I$(BUILD)/generated -I$(BUILD)/vendor/bearssl-0.6/inc -DORION_ARCH_NAME=\"i686\"
@@ -58,13 +58,17 @@ $(BEARSSL_I686): $(BEARSSL_STAMP)
 	done
 	llvm-ar rcs $@ $(BUILD)/bearssl-i686/*.o
 
-.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke legacy-i686 legacy-smoke aster-smoke
+.PHONY: all clean run image iso kernel smoke iso-smoke install-smoke network-smoke legacy-i686 legacy-smoke aster-smoke dhcp-smoke
 all: image
 kernel: $(BUILD)/kernel.elf
 
 aster-smoke: | $(BUILD)
 	$(CC) -std=c11 -Wall -Wextra -Werror -Iinclude kernel/aster.c tests/aster_selector_smoke.c -o $(BUILD)/aster-selector-smoke
 	./$(BUILD)/aster-selector-smoke
+
+dhcp-smoke: | $(BUILD)
+	$(CC) -std=c11 -Wall -Wextra -Werror -DORION_DHCP_HOST_TEST -Iinclude kernel/dhcp.c tests/dhcp_packet_smoke.c -o $(BUILD)/dhcp-packet-smoke
+	./$(BUILD)/dhcp-packet-smoke
 
 $(BUILD):
 	mkdir -p $(BUILD)

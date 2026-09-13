@@ -26,7 +26,8 @@ This document tracks subsystem work rather than marketing milestones.
 
 ## Networking
 
-- DHCPv4 and configurable DNS
+- initial DHCPv4 DORA boot client is implemented with static fallback and packet-level regression coverage
+- add DHCP lease renewal/rebinding, configurable DNS and persistent network settings
 - general socket API instead of one synchronous TCP transaction
 - TCP retransmission/window handling
 - TLS/HTTPS foundation
@@ -59,5 +60,6 @@ This document tracks subsystem work rather than marketing milestones.
 ## Maintenance
 
 - keep `Makefile`, `include/version.h`, README media names and CI artifact names version-synchronized
-- keep x86_64 UEFI, i686 floppy/HDD, Cirrus RGB565, installer and HTTPS smoke coverage green
+- use the version-agnostic tag release workflow instead of adding new hard-coded release workflows
+- keep x86_64 UEFI, i686 floppy/HDD, Cirrus RGB565, DHCP, installer and HTTPS smoke coverage green
 - prefer host-side regression tests for pure subsystems before extending full-system QEMU coverage

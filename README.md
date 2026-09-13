@@ -84,6 +84,7 @@ The early network stack is intentionally small but real. L2/L3/L4 is separated f
 - Intel 82583V detection through the e1000e-family path
 - legacy/transitional virtio-net
 - Ethernet II / ARP / IPv4
+- DHCPv4 DORA client with boot-time lease acquisition and static fallback
 - ICMP echo
 - UDP and DNS A lookup
 - synchronous TCP client
@@ -91,13 +92,16 @@ The early network stack is intentionally small but real. L2/L3/L4 is separated f
 - verified TLS 1.2 / HTTPS GET
 - lightweight binary HTTP resource path for browser images
 
-Default QEMU user-network profile:
+At boot, Orion attempts a bounded DHCPv4 Discover/Offer/Request/Ack exchange over the initialized NIC. A valid lease updates the IPv4 address, netmask, gateway and DNS configuration. If DHCP is unavailable or returns an incomplete lease, the existing static profile is left untouched rather than partially applying configuration.
+
+Default QEMU user-network fallback profile:
 - guest `10.0.2.15/24`
 - gateway `10.0.2.2`
 - DNS `10.0.2.3`
 
+QEMU user networking normally leases the same `10.0.2.15/24` profile through DHCP. The OpenWrt lab can now obtain its LAN configuration from OpenWrt DHCP automatically; the `openwrt` terminal command remains available as an explicit static `192.168.1.2/24`, gateway/DNS `192.168.1.1` fallback.
+
 Terminal commands include `net`, `ping`, `vela`, `browser`, `nettest`, and `openwrt`.
-`openwrt` switches the early static profile to `192.168.1.2/24`, gateway/DNS `192.168.1.1`.
 
 ## Memory management
 The early physical memory manager consumes the firmware memory map and hands out 4 KiB conventional-memory pages above 16 MiB. The current v0.0.10 development line also supports bounded single-page recycling through `pmm_free_page()`, so subsystems can return short-lived pages without forcing the allocator to advance forever.
@@ -140,10 +144,10 @@ OPENWRT_IMAGE=/path/to/openwrt-x86-64.img ./scripts/run-openwrt-lab.sh
 ```
 Then in Orion Terminal:
 ```text
-openwrt
 ping
 vela
 ```
+If DHCP is disabled on the OpenWrt LAN, run `openwrt` first to apply Orion's static fallback profile.
 
 ## Related UN repositories
 - `UN_Vela` — portable browser shell and reference Platform ABI implementation
@@ -163,10 +167,17 @@ make run
 
 BearSSL is fetched reproducibly by the project build helper; the CA bundle is converted into freestanding trust-anchor data during the build.
 
+## Releases
+`.github/workflows/release.yml` is the maintained release path. Pushing a tag that exactly matches the project version, for example `v0.0.10`, rebuilds and validates the media, generates SHA-256 sums, and publishes x86_64 UEFI, i686 BIOS and installer ISO assets. The workflow derives the version from `Makefile`; it does not depend on a hard-coded previous Actions run ID.
+
+Older `release-v*.yml` files are retained only as historical records of earlier release automation.
+
 ## Validation
 The main CI builds boot media and exercises:
 - project version consistency across `Makefile`, `include/version.h`, README media names and workflow artifact names
 - PMM allocate/free/recycle host smoke
+- DHCP packet construction/parser host smoke
+- DHCP lease acquisition through QEMU user networking on x86_64 and i686 boot paths
 - Aster selector/cascade host smoke
 - x86_64 UEFI QEMU boot
 - i686 Legacy BIOS full-system boot
@@ -179,7 +190,7 @@ The main CI builds boot media and exercises:
 - HTTPS markup delivery through UN_Vela -> Aster title parsing
 
 ## Current limitations
-- IPv4 configuration is static; DHCP is a future network milestone.
+- DHCPv4 is currently an early synchronous boot-time client; lease renewal/rebinding and persistent network settings are not implemented yet.
 - TCP is a small synchronous client, not yet a general socket API.
 - Native TLS currently targets TLS 1.2 and uses x86 RDRAND as its fail-closed entropy source.
 - BearSSL's lightweight verifier is not a full modern-browser PKI implementation.
@@ -190,4 +201,4 @@ The main CI builds boot media and exercises:
 
 Stable desktop release: `v0.0.4`.
 Latest published release: `v0.0.9`.
-Current development line: `v0.0.10`, adding Cirrus RGB565 compatibility/refresh work and the next round of memory-management and maintenance improvements on top of the validated v0.0.8 HTTPS foundation.
+Current development line: `v0.0.10`, adding Cirrus RGB565 compatibility/refresh work, DHCPv4 boot configuration, PMM recycling and maintenance/release automation improvements on top of the validated v0.0.8 HTTPS foundation.
