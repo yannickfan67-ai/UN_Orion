@@ -20,8 +20,11 @@ jobs:
           mkdir -p build
           clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/pmm.c tests/pmm_recycle_smoke.c -o build/pmm-recycle-smoke
           ./build/pmm-recycle-smoke
-      - name: DHCP packet host smoke
-        run: make dhcp-smoke
+      - name: DHCP host smoke
+        run: |
+          make dhcp-smoke
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/dhcp.c tests/dhcp_timeout_smoke.c -o build/dhcp-timeout-smoke
+          ./build/dhcp-timeout-smoke
       - name: Aster selector host smoke
         run: make aster-smoke
       - name: Build boot media with native TLS trust store
