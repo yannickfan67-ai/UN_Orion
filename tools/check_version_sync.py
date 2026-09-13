@@ -8,6 +8,7 @@ makefile = (root / "Makefile").read_text(encoding="utf-8")
 version_h = (root / "include" / "version.h").read_text(encoding="utf-8")
 readme = (root / "README.md").read_text(encoding="utf-8")
 workflow = (root / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+release_workflow = (root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
 
 def capture(pattern: str, text: str, label: str) -> str:
@@ -37,6 +38,17 @@ if f"UN_Orion-v{make_version}-i686-bios.img" not in workflow:
     errors.append("build workflow i686 path is stale")
 if f"UN_Orion {make_version} alive" not in workflow:
     errors.append("build workflow boot-version assertion is stale")
+
+release_required = [
+    'test "v$version" = "$GITHUB_REF_NAME"',
+    'gh release create "$GITHUB_REF_NAME"',
+    'SHA256SUMS.txt',
+]
+for snippet in release_required:
+    if snippet not in release_workflow:
+        errors.append(f"generic release workflow is missing: {snippet}")
+if re.search(r"UN_Orion-v\d+\.\d+\.\d+", release_workflow):
+    errors.append("generic release workflow contains a hard-coded media version")
 
 if errors:
     for error in errors:
