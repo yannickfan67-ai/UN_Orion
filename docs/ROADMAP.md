@@ -42,8 +42,8 @@ This document tracks subsystem work rather than marketing milestones.
 
 ## Kernel architecture
 
+- early PMM now allocates conventional pages and supports bounded single-page recycling; replace it with a bitmap/buddy allocator with unrestricted free support
 - kernel-owned page tables and virtual memory manager
-- bitmap/buddy physical allocator with free support
 - APIC/IOAPIC and MSI/MSI-X after legacy PIC bring-up remains stable
 - process/thread scheduler, syscall ABI and userspace
 - VFS, handles, capabilities and security boundaries
@@ -55,3 +55,9 @@ This document tracks subsystem work rather than marketing milestones.
 - audio stack
 - installer UI only after storage writes are reliable
 - future **Cygnus Manager** frontend for creating and controlling UN_Cygnus VMs
+
+## Maintenance
+
+- keep `Makefile`, `include/version.h`, README media names and CI artifact names version-synchronized
+- keep x86_64 UEFI, i686 floppy/HDD, Cirrus RGB565, installer and HTTPS smoke coverage green
+- prefer host-side regression tests for pure subsystems before extending full-system QEMU coverage

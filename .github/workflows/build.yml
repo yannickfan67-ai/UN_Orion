@@ -13,6 +13,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm make qemu-system-x86 ovmf gnu-efi ca-certificates openssl
+      - name: Version consistency check
+        run: python3 tools/check_version_sync.py
+      - name: PMM recycle host smoke
+        run: |
+          mkdir -p build
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/pmm.c tests/pmm_recycle_smoke.c -o build/pmm-recycle-smoke
+          ./build/pmm-recycle-smoke
       - name: Aster selector host smoke
         run: make aster-smoke
       - name: Build boot media with native TLS trust store

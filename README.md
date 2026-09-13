@@ -37,7 +37,7 @@ The transport keeps HTML markup intact instead of flattening it into text. The H
 
 ### Native TLS / HTTPS
 
-UN_Orion 0.0.8 adds an in-kernel HTTPS client built around a freestanding BearSSL 0.6 integration. The native carrier:
+UN_Orion 0.0.8 introduced an in-kernel HTTPS client built around a freestanding BearSSL 0.6 integration. The native carrier:
 - negotiates TLS 1.2 and does not silently downgrade HTTPS to plaintext HTTP
 - validates certificate chains against an embedded CA trust store generated at build time
 - passes the requested host name to BearSSL for SNI/name validation
@@ -99,6 +99,11 @@ Default QEMU user-network profile:
 Terminal commands include `net`, `ping`, `vela`, `browser`, `nettest`, and `openwrt`.
 `openwrt` switches the early static profile to `192.168.1.2/24`, gateway/DNS `192.168.1.1`.
 
+## Memory management
+The early physical memory manager consumes the firmware memory map and hands out 4 KiB conventional-memory pages above 16 MiB. The current v0.0.10 development line also supports bounded single-page recycling through `pmm_free_page()`, so subsystems can return short-lived pages without forcing the allocator to advance forever.
+
+This is still an early allocator rather than the final virtual-memory architecture. A bitmap/buddy allocator, unrestricted free support, kernel-owned page tables and a VMM remain planned.
+
 ## 86Box late-era compatibility profile
 A tested late 86Box profile is included at `compat/86box/cuv4xls-c3-733.cfg`:
 - ASUS CUV4X-LS / VIA Apollo Pro 133A
@@ -107,7 +112,7 @@ A tested late 86Box profile is included at `compat/86box/cuv4xls-c3-733.cfg`:
 - Voodoo3 3500 AGP
 - PS/2 input, SB16 and PCnet-FAST III
 
-The i686 Legacy BIOS bootstrap has reached protected mode on this profile with 86Box build 9001 and the 6.0 ROM set. The browser/runtime build continues to compile and boot on the i686 compatibility path. HTTPS additionally requires a CPU exposing the entropy capability used by the current TLS implementation.
+The i686 Legacy BIOS bootstrap has reached protected mode on this profile with 86Box build 9001 and the 6.0 ROM set. The browser/runtime build continues to compile and boot on the i686 compatibility path. The Legacy VBE path supports both the existing 32-bpp modes and 16-bpp RGB565 fallback modes used by Cirrus GD5446-class adapters. HTTPS additionally requires a CPU exposing the entropy capability used by the current TLS implementation.
 
 ## UEFI install / live media
 UN_Orion has an El Torito UEFI ISO built directly from the bootable FAT system image.
@@ -118,7 +123,7 @@ make iso
 
 Output:
 ```text
-build/UN_Orion-v0.0.8-install.iso
+build/UN_Orion-v0.0.10-install.iso
 ```
 
 `make iso-smoke` boots the ISO as a virtual DVD through OVMF and requires the bootloader, kernel and desktop to reach a healthy state.
@@ -160,9 +165,13 @@ BearSSL is fetched reproducibly by the project build helper; the CA bundle is co
 
 ## Validation
 The main CI builds boot media and exercises:
+- project version consistency across `Makefile`, `include/version.h`, README media names and workflow artifact names
+- PMM allocate/free/recycle host smoke
 - Aster selector/cascade host smoke
 - x86_64 UEFI QEMU boot
 - i686 Legacy BIOS full-system boot
+- i686 Legacy BIOS hard-disk boot
+- i686 Cirrus VBE RGB565 boot
 - UEFI install ISO boot
 - end-to-end disk installation
 - self-contained QEMU HTTP -> HTTPS redirect with a temporary CI CA
@@ -176,6 +185,9 @@ The main CI builds boot media and exercises:
 - BearSSL's lightweight verifier is not a full modern-browser PKI implementation.
 - CSS and JavaScript are deliberately lightweight subsets, not web-platform conformance implementations.
 - Native image decoding currently targets lightweight BMP/PPM formats rather than the full modern web image set.
+- the PMM recycle path is intentionally bounded and is not yet a full bitmap/buddy allocator or VMM.
 - Files/Notes persistence and ORX loading from disk are still in progress.
 
-Stable desktop release: `v0.0.4`. The current `v0.0.8` development line adds validated native HTTPS on top of networking, multi-firmware compatibility, install media, UN_Vela/Aster 0.3.x, images, CSS/JS subsets and browser interaction work.
+Stable desktop release: `v0.0.4`.
+Latest published release: `v0.0.9`.
+Current development line: `v0.0.10`, adding Cirrus RGB565 compatibility/refresh work and the next round of memory-management and maintenance improvements on top of the validated v0.0.8 HTTPS foundation.
