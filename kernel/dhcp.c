@@ -35,17 +35,9 @@ static void dput32(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t)v;
 }
 
-static uint16_t dget16(const uint8_t *p) {
-    return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
-}
-
 static uint32_t dget32(const uint8_t *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
            ((uint32_t)p[2] << 8) | p[3];
-}
-
-static int ip_nonzero(const uint8_t ip[4]) {
-    return ip[0] || ip[1] || ip[2] || ip[3];
 }
 
 static size_t dhcp_base(uint8_t *packet, size_t cap, uint32_t xid,
@@ -149,6 +141,14 @@ int dhcp_parse_reply(const uint8_t *packet, size_t len, uint32_t xid,
 #define IP_UDP 17u
 #define DHCP_CLIENT_PORT 68u
 #define DHCP_SERVER_PORT 67u
+
+static uint16_t dget16(const uint8_t *p) {
+    return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
+}
+
+static int ip_nonzero(const uint8_t ip[4]) {
+    return ip[0] || ip[1] || ip[2] || ip[3];
+}
 
 static volatile int dhcp_phase;
 static volatile int dhcp_event;
