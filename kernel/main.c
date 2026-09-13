@@ -21,6 +21,9 @@ __attribute__((noreturn)) void kernel_main(OrionBootInfo *bi){
     interrupts_init(100);
     serial_write("IDT/PIC/PIT/keyboard ready\r\n");
     serial_write(mouse_available()?"PS/2 mouse IRQ12 ready\r\n":"PS/2 mouse unavailable\r\n");
+
+    /* DHCP uses the PIT clock for bounded retry/timeout handling. */
+    __asm__ volatile("sti");
     int network_up=net_init();
     if(network_up){
         uint8_t mac[6];
@@ -39,7 +42,6 @@ __attribute__((noreturn)) void kernel_main(OrionBootInfo *bi){
         desktop_init(bi);
         serial_write("Orion desktop ready\r\n");
     }
-    __asm__ volatile("sti");
     for(;;){
         uint8_t b;
         while(keyboard_pop_scancode(&b))desktop_key_scancode(b);
