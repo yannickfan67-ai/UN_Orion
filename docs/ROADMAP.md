@@ -4,7 +4,7 @@ This document tracks subsystem work rather than marketing milestones.
 
 ## Storage and persistence
 
-- split PCI enumeration, block devices and filesystems out of monolithic modules
+- generic block-device ABI with checked LBA bounds and optional write support is implemented; next connect the ATA/IDE PIO driver and keep filesystems above this boundary
 - ATA/IDE PIO reference block driver first, then AHCI and NVMe
 - FAT16 read/write for the existing boot media
 - persistent Files and Notes
