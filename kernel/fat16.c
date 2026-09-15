@@ -15,6 +15,14 @@ static int is_power_of_two_u8(uint8_t value) {
     return value != 0 && (value & (uint8_t)(value - 1u)) == 0;
 }
 
+static int name83_equal(const uint8_t a[11], const uint8_t b[11]) {
+    uint32_t i;
+    for (i = 0; i < 11; ++i) {
+        if (a[i] != b[i]) return 0;
+    }
+    return 1;
+}
+
 int fat16_mount(orion_blockdev_t *dev, uint64_t volume_start_lba, orion_fat16_t *out) {
     uint8_t boot[512];
     uint16_t bytes_per_sector;
@@ -86,4 +94,33 @@ int fat16_mount(orion_blockdev_t *dev, uint64_t volume_start_lba, orion_fat16_t 
 int fat16_read_root_sector(orion_fat16_t *fs, uint32_t sector_index, void *buffer) {
     if (!fs || !fs->dev || !buffer || sector_index >= fs->root_dir_sectors) return -1;
     return blockdev_read(fs->dev, fs->first_root_lba + sector_index, 1, buffer);
+}
+
+int fat16_find_root(orion_fat16_t *fs, const uint8_t name83[11], orion_fat16_dirent_t *out) {
+    uint8_t sector[512];
+    uint32_t entries_per_sector;
+    uint32_t sector_index;
+    uint32_t seen = 0;
+
+    if (!fs || !fs->dev || !name83 || !out || fs->bytes_per_sector != sizeof(sector)) return -1;
+    entries_per_sector = fs->bytes_per_sector / 32u;
+
+    for (sector_index = 0; sector_index < fs->root_dir_sectors && seen < fs->root_entry_count; ++sector_index) {
+        uint32_t entry_index;
+        if (fat16_read_root_sector(fs, sector_index, sector) != 0) return -1;
+        for (entry_index = 0; entry_index < entries_per_sector && seen < fs->root_entry_count; ++entry_index, ++seen) {
+            const uint8_t *entry = sector + entry_index * 32u;
+            uint8_t attributes = entry[11];
+            if (entry[0] == 0x00) return 1;
+            if (entry[0] == 0xe5 || attributes == 0x0f || (attributes & 0x08u) != 0) continue;
+            if (!name83_equal(entry, name83)) continue;
+
+            for (uint32_t i = 0; i < 11; ++i) out->name[i] = entry[i];
+            out->attributes = attributes;
+            out->first_cluster = read_le16(entry + 26);
+            out->size = read_le32(entry + 28);
+            return 0;
+        }
+    }
+    return 1;
 }
