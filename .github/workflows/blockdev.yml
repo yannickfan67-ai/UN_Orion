@@ -1,0 +1,21 @@
+name: Block device regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  blockdev:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host block-device smoke
+        run: |
+          mkdir -p build
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/blockdev.c tests/blockdev_smoke.c -o build/blockdev-smoke
+          ./build/blockdev-smoke
+      - name: Freestanding compile x86_64
+        run: clang -target x86_64-unknown-none -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -Werror -O2 -Iinclude -c kernel/blockdev.c -o build/blockdev-x64.o
+      - name: Freestanding compile i686
+        run: clang -target i386-unknown-none -march=i686 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -Werror -O2 -Iinclude -c kernel/blockdev.c -o build/blockdev-i686.o
