@@ -108,6 +108,11 @@ The early physical memory manager consumes the firmware memory map and hands out
 
 This is still an early allocator rather than the final virtual-memory architecture. A bitmap/buddy allocator, unrestricted free support, kernel-owned page tables and a VMM remain planned.
 
+## Storage groundwork
+The v0.0.10 development line now has an architecture-neutral block-device ABI with checked LBA bounds and optional write support. On top of it, Orion has an initial read-only FAT16 mount layer that validates the BPB and boot signature, rejects non-FAT16 cluster counts or out-of-device volumes, computes FAT/root/data geometry, and exposes bounded root-directory sector reads.
+
+The first FAT16 layer deliberately targets 512-byte logical sectors, matching the current boot media. It does not yet provide ATA/IDE hardware I/O, directory-entry parsing, cluster-chain traversal, file writes, or persistence for Files/Notes. Those remain the next storage steps before disk-backed ORX loading.
+
 ## 86Box late-era compatibility profile
 A tested late 86Box profile is included at `compat/86box/cuv4xls-c3-733.cfg`:
 - ASUS CUV4X-LS / VIA Apollo Pro 133A
@@ -176,6 +181,8 @@ Older `release-v*.yml` files are retained only as historical records of earlier 
 The main CI builds boot media and exercises:
 - project version consistency across `Makefile`, `include/version.h`, README media names and workflow artifact names
 - PMM allocate/free/recycle host smoke
+- block-device bounds/read-only host smoke plus x86_64/i686 freestanding compile checks
+- FAT16 mount/root-read host smoke plus x86_64/i686 freestanding compile checks
 - DHCP packet construction/parser host smoke
 - DHCP lease acquisition through QEMU user networking on x86_64 and i686 boot paths
 - Aster selector/cascade host smoke
@@ -197,8 +204,9 @@ The main CI builds boot media and exercises:
 - CSS and JavaScript are deliberately lightweight subsets, not web-platform conformance implementations.
 - Native image decoding currently targets lightweight BMP/PPM formats rather than the full modern web image set.
 - the PMM recycle path is intentionally bounded and is not yet a full bitmap/buddy allocator or VMM.
+- the storage layer can validate/read FAT16 metadata through the block ABI, but no hardware block driver or FAT16 file write path is wired yet.
 - Files/Notes persistence and ORX loading from disk are still in progress.
 
 Stable desktop release: `v0.0.4`.
 Latest published release: `v0.0.9`.
-Current development line: `v0.0.10`, adding Cirrus RGB565 compatibility/refresh work, DHCPv4 boot configuration, PMM recycling and maintenance/release automation improvements on top of the validated v0.0.8 HTTPS foundation.
+Current development line: `v0.0.10`, adding Cirrus RGB565 compatibility/refresh work, DHCPv4 boot configuration, PMM recycling, block-device/FAT16 storage groundwork and maintenance/release automation improvements on top of the validated v0.0.8 HTTPS foundation.
