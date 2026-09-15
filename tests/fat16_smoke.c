@@ -44,12 +44,24 @@ static void make_valid_fat16_boot(uint8_t *boot) {
 int main(void) {
     orion_blockdev_t dev = {"mem0", BLOCK_SIZE, BLOCK_COUNT, mem_read, 0, 0};
     orion_fat16_t fs;
+    orion_fat16_dirent_t found;
     uint8_t root[BLOCK_SIZE];
     uint8_t *boot = disk + VOLUME_START * BLOCK_SIZE;
+    uint8_t *root_disk = disk + 42u * BLOCK_SIZE;
+    static const uint8_t notes_name[11] = {'N','O','T','E','S',' ',' ',' ','T','X','T'};
+    static const uint8_t missing_name[11] = {'M','I','S','S','I','N','G',' ','T','X','T'};
 
     memset(disk, 0, sizeof(disk));
     make_valid_fat16_boot(boot);
-    memset(disk + 42u * BLOCK_SIZE, 0x5a, BLOCK_SIZE);
+    memcpy(root_disk, "VOLUME     ", 11);
+    root_disk[11] = 0x08;
+    memset(root_disk + 32, 0xe5, 32);
+    memcpy(root_disk + 64, "LONGNA~1TXT", 11);
+    root_disk[64 + 11] = 0x0f;
+    memcpy(root_disk + 96, notes_name, 11);
+    root_disk[96 + 11] = 0x20;
+    put16(root_disk + 96 + 26, 7);
+    put32(root_disk + 96 + 28, 1234);
 
     assert(fat16_mount(&dev, VOLUME_START, &fs) == 0);
     assert(fs.total_sectors == 5000);
@@ -61,8 +73,16 @@ int main(void) {
     assert(fs.first_root_lba == 42);
     assert(fs.first_data_lba == 74);
     assert(fat16_read_root_sector(&fs, 0, root) == 0);
-    assert(root[0] == 0x5a && root[BLOCK_SIZE - 1] == 0x5a);
+    assert(root[0] == 'V');
     assert(fat16_read_root_sector(&fs, fs.root_dir_sectors, root) != 0);
+
+    assert(fat16_find_root(&fs, notes_name, &found) == 0);
+    assert(memcmp(found.name, notes_name, 11) == 0);
+    assert(found.attributes == 0x20);
+    assert(found.first_cluster == 7);
+    assert(found.size == 1234);
+    assert(fat16_find_root(&fs, missing_name, &found) == 1);
+    assert(fat16_find_root(&fs, 0, &found) != 0);
 
     put16(boot + 19, 0);
     put32(boot + 32, 5000);
