@@ -46,8 +46,12 @@ int main(void) {
     orion_fat16_t fs;
     orion_fat16_dirent_t found;
     uint8_t root[BLOCK_SIZE];
+    uint8_t cluster_data[BLOCK_SIZE];
+    uint16_t next_cluster;
     uint8_t *boot = disk + VOLUME_START * BLOCK_SIZE;
+    uint8_t *fat = disk + 2u * BLOCK_SIZE;
     uint8_t *root_disk = disk + 42u * BLOCK_SIZE;
+    uint8_t *cluster7_disk = disk + 79u * BLOCK_SIZE;
     static const uint8_t notes_name[11] = {'N','O','T','E','S',' ',' ',' ','T','X','T'};
     static const uint8_t missing_name[11] = {'M','I','S','S','I','N','G',' ','T','X','T'};
 
@@ -62,6 +66,9 @@ int main(void) {
     root_disk[96 + 11] = 0x20;
     put16(root_disk + 96 + 26, 7);
     put32(root_disk + 96 + 28, 1234);
+    put16(fat + 7u * 2u, 8);
+    put16(fat + 8u * 2u, 0xffff);
+    memcpy(cluster7_disk, "cluster-seven", 13);
 
     assert(fat16_mount(&dev, VOLUME_START, &fs) == 0);
     assert(fs.total_sectors == 5000);
@@ -83,6 +90,19 @@ int main(void) {
     assert(found.size == 1234);
     assert(fat16_find_root(&fs, missing_name, &found) == 1);
     assert(fat16_find_root(&fs, 0, &found) != 0);
+
+    memset(cluster_data, 0, sizeof(cluster_data));
+    assert(fat16_read_cluster(&fs, 7, cluster_data) == 0);
+    assert(memcmp(cluster_data, "cluster-seven", 13) == 0);
+    assert(fat16_read_cluster(&fs, 1, cluster_data) != 0);
+    assert(fat16_read_cluster(&fs, (uint16_t)(fs.data_cluster_count + 2u), cluster_data) != 0);
+    assert(fat16_next_cluster(&fs, 7, &next_cluster) == 0);
+    assert(next_cluster == 8);
+    assert(fat16_next_cluster(&fs, 8, &next_cluster) == 1);
+    assert(next_cluster == 0);
+    put16(fat + 7u * 2u, 0xfff7);
+    assert(fat16_next_cluster(&fs, 7, &next_cluster) != 0);
+    put16(fat + 7u * 2u, 8);
 
     put16(boot + 19, 0);
     put32(boot + 32, 5000);
