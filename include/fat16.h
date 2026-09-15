@@ -31,5 +31,7 @@ typedef struct {
 int fat16_mount(orion_blockdev_t *dev, uint64_t volume_start_lba, orion_fat16_t *out);
 int fat16_read_root_sector(orion_fat16_t *fs, uint32_t sector_index, void *buffer);
 int fat16_find_root(orion_fat16_t *fs, const uint8_t name83[11], orion_fat16_dirent_t *out);
+int fat16_read_cluster(orion_fat16_t *fs, uint16_t cluster, void *buffer);
+int fat16_next_cluster(orion_fat16_t *fs, uint16_t cluster, uint16_t *next_cluster);
 
 #endif
