@@ -15,7 +15,15 @@ jobs:
           mkdir -p build
           clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/blockdev.c tests/blockdev_smoke.c -o build/blockdev-smoke
           ./build/blockdev-smoke
+      - name: Host FAT16 smoke
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude kernel/blockdev.c kernel/fat16.c tests/fat16_smoke.c -o build/fat16-smoke
+          ./build/fat16-smoke
       - name: Freestanding compile x86_64
-        run: clang -target x86_64-unknown-none -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -Werror -O2 -Iinclude -c kernel/blockdev.c -o build/blockdev-x64.o
+        run: |
+          clang -target x86_64-unknown-none -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -Werror -O2 -Iinclude -c kernel/blockdev.c -o build/blockdev-x64.o
+          clang -target x86_64-unknown-none -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -mgeneral-regs-only -Wall -Wextra -Werror -O2 -Iinclude -c kernel/fat16.c -o build/fat16-x64.o
       - name: Freestanding compile i686
-        run: clang -target i386-unknown-none -march=i686 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -Werror -O2 -Iinclude -c kernel/blockdev.c -o build/blockdev-i686.o
+        run: |
+          clang -target i386-unknown-none -march=i686 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -Werror -O2 -Iinclude -c kernel/blockdev.c -o build/blockdev-i686.o
+          clang -target i386-unknown-none -march=i686 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -mgeneral-regs-only -mno-sse -mno-sse2 -mno-mmx -Wall -Wextra -Werror -O2 -Iinclude -c kernel/fat16.c -o build/fat16-i686.o

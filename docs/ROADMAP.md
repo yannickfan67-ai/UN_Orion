@@ -4,9 +4,10 @@ This document tracks subsystem work rather than marketing milestones.
 
 ## Storage and persistence
 
-- generic block-device ABI with checked LBA bounds and optional write support is implemented; next connect the ATA/IDE PIO driver and keep filesystems above this boundary
-- ATA/IDE PIO reference block driver first, then AHCI and NVMe
-- FAT16 read/write for the existing boot media
+- generic block-device ABI with checked LBA bounds and optional write support is implemented
+- initial read-only FAT16 mount/geometry validation is implemented for 512-byte logical sectors, including bounded root-directory sector reads
+- connect an ATA/IDE PIO reference driver to the block-device ABI first, then AHCI and NVMe
+- extend FAT16 with directory entry parsing, cluster-chain reads and finally guarded write support
 - persistent Files and Notes
 - real install-to-disk path from the UEFI optical media
 
@@ -62,4 +63,5 @@ This document tracks subsystem work rather than marketing milestones.
 - keep `Makefile`, `include/version.h`, README media names and CI artifact names version-synchronized
 - use the version-agnostic tag release workflow instead of adding new hard-coded release workflows
 - keep x86_64 UEFI, i686 floppy/HDD, Cirrus RGB565, DHCP, installer and HTTPS smoke coverage green
+- keep block-device and FAT16 host/freestanding regression coverage green while storage is brought online
 - prefer host-side regression tests for pure subsystems before extending full-system QEMU coverage
