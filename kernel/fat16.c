@@ -23,6 +23,10 @@ static int name83_equal(const uint8_t a[11], const uint8_t b[11]) {
     return 1;
 }
 
+static int fat16_cluster_valid(const orion_fat16_t *fs, uint16_t cluster) {
+    return fs && cluster >= 2u && (uint32_t)(cluster - 2u) < fs->data_cluster_count;
+}
+
 int fat16_mount(orion_blockdev_t *dev, uint64_t volume_start_lba, orion_fat16_t *out) {
     uint8_t boot[512];
     uint16_t bytes_per_sector;
@@ -123,4 +127,35 @@ int fat16_find_root(orion_fat16_t *fs, const uint8_t name83[11], orion_fat16_dir
         }
     }
     return 1;
+}
+
+int fat16_read_cluster(orion_fat16_t *fs, uint16_t cluster, void *buffer) {
+    uint64_t lba;
+    if (!fs || !fs->dev || !buffer || !fat16_cluster_valid(fs, cluster)) return -1;
+    lba = fs->first_data_lba + (uint64_t)(cluster - 2u) * fs->sectors_per_cluster;
+    return blockdev_read(fs->dev, lba, fs->sectors_per_cluster, buffer);
+}
+
+int fat16_next_cluster(orion_fat16_t *fs, uint16_t cluster, uint16_t *next_cluster) {
+    uint8_t sector[512];
+    uint32_t fat_offset;
+    uint32_t sector_index;
+    uint32_t entry_offset;
+    uint16_t next;
+
+    if (!fs || !fs->dev || !next_cluster || fs->bytes_per_sector != sizeof(sector) || !fat16_cluster_valid(fs, cluster)) return -1;
+    fat_offset = (uint32_t)cluster * 2u;
+    sector_index = fat_offset / fs->bytes_per_sector;
+    entry_offset = fat_offset % fs->bytes_per_sector;
+    if (sector_index >= fs->sectors_per_fat || entry_offset + 1u >= fs->bytes_per_sector) return -1;
+    if (blockdev_read(fs->dev, fs->first_fat_lba + sector_index, 1, sector) != 0) return -1;
+
+    next = read_le16(sector + entry_offset);
+    if (next >= 0xfff8u) {
+        *next_cluster = 0;
+        return 1;
+    }
+    if (next == 0xfff7u || !fat16_cluster_valid(fs, next)) return -1;
+    *next_cluster = next;
+    return 0;
 }
